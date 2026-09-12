@@ -29,7 +29,7 @@ use std::io::Write;
 use std::mem::transmute;
 use std::pin::Pin;
 // use std::io::Write;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::{Duration, Instant};
@@ -44,6 +44,63 @@ type QueryChannelSender = oneshot::Sender<RawResult<WsRecvData>>;
 type QueryInner = HashMap<ReqId, QueryChannelSender>;
 type QueryAgent = Arc<QueryInner>;
 type QueryResMapper = HashMap<ResId, ReqId>;
+type ConnectionClosed = Arc<AtomicBool>;
+
+fn tdengine_ws_connection_closed_error(reason: impl Into<String>) -> RawError {
+    RawError::new(
+        WS_ERROR_NO::CONN_CLOSED.as_code(),
+        format!("websocket connection closed: {}", reason.into()),
+    )
+}
+
+fn tdengine_ws_decode_error(error: &serde_json::Error) -> RawError {
+    tdengine_ws_connection_closed_error(format!(
+        "TDengine websocket response decode failed: {error}"
+    ))
+}
+
+fn extract_req_id_from_json_payload(payload: &[u8]) -> Option<ReqId> {
+    #[derive(serde::Deserialize)]
+    struct ReqIdProbe {
+        req_id: Option<ReqId>,
+    }
+
+    serde_json::from_slice::<ReqIdProbe>(payload)
+        .ok()
+        .and_then(|probe| probe.req_id)
+}
+
+fn fail_all_queries_with_decode_error(queries_sender: &QueryAgent, error: &serde_json::Error) {
+    let mut keys = Vec::new();
+    for e in queries_sender.iter() {
+        keys.push(*e.key());
+    }
+    for k in keys {
+        if let Some((_, sender)) = queries_sender.remove(&k) {
+            let _ = sender.send(Err(tdengine_ws_decode_error(error)));
+        }
+    }
+}
+
+fn fail_all_queries_with_connection_closed(queries_sender: &QueryAgent, reason: impl AsRef<str>) {
+    let mut keys = Vec::new();
+    for e in queries_sender.iter() {
+        keys.push(*e.key());
+    }
+    for k in keys {
+        if let Some((_, sender)) = queries_sender.remove(&k) {
+            let _ = sender.send(Err(tdengine_ws_connection_closed_error(reason.as_ref())));
+        }
+    }
+}
+
+fn mark_connection_closed(
+    connection_closed: &ConnectionClosed,
+    close_signal: &watch::Sender<bool>,
+) {
+    connection_closed.store(true, Ordering::SeqCst);
+    let _ = close_signal.send(true);
+}
 
 #[derive(Debug, Clone)]
 struct Version {
@@ -63,9 +120,19 @@ struct WsQuerySender {
     results: Arc<QueryResMapper>,
     sender: WsSender,
     queries: QueryAgent,
+    connection_closed: ConnectionClosed,
 }
 
 impl WsQuerySender {
+    fn ensure_open(&self) -> RawResult<()> {
+        if self.connection_closed.load(Ordering::SeqCst) {
+            return Err(tdengine_ws_connection_closed_error(
+                "send attempted after websocket reader closed",
+            ));
+        }
+        Ok(())
+    }
+
     fn req_id(&self) -> ReqId {
         self.req_id
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
@@ -75,6 +142,7 @@ impl WsQuerySender {
         let req_id = msg.req_id();
         let (tx, rx) = query_channel();
 
+        self.ensure_open()?;
         self.queries.insert(req_id, tx);
 
         match msg {
@@ -307,6 +375,8 @@ async fn read_queries(
     fetches_sender: Arc<QueryResMapper>,
     ws2: WsSender,
     is_v3: bool,
+    close_signal: watch::Sender<bool>,
+    connection_closed: ConnectionClosed,
     mut close_listener: watch::Receiver<bool>,
 ) {
     let ws3 = ws2.clone();
@@ -329,14 +399,37 @@ async fn read_queries(
     });
     'ws: loop {
         tokio::select! {
-            Ok(frame) = reader.receive() => {
-                let (header, payload) = frame;
+            frame = reader.receive() => {
+                let (header, payload) = match frame {
+                    Ok(frame) => frame,
+                    Err(error) => {
+                        log::warn!("TDengine websocket reader failed: {error}");
+                        mark_connection_closed(&connection_closed, &close_signal);
+                        fail_all_queries_with_connection_closed(
+                            &queries_sender,
+                            format!("websocket receive failed: {error}"),
+                        );
+                        break 'ws;
+                    }
+                };
                 let code = header.code;
                 match code {
                     OpCode::Text => {
 
                         log::trace!("received json response: {payload}", payload = String::from_utf8_lossy(&payload));
-                        let v: WsRecv = serde_json::from_slice(&payload).unwrap();
+                        let v: WsRecv = match serde_json::from_slice(&payload) {
+                            Ok(v) => v,
+                            Err(error) => {
+                                let req_id = extract_req_id_from_json_payload(&payload);
+                                log::error!(
+                                    "failed to decode TDengine websocket JSON response: {error}; req_id={req_id:?}; payload_bytes={payload_len}",
+                                    payload_len = payload.len()
+                                );
+                                mark_connection_closed(&connection_closed, &close_signal);
+                                fail_all_queries_with_decode_error(&queries_sender, &error);
+                                break 'ws;
+                            }
+                        };
 
                         let (req_id, data, ok) = v.ok();
                         match &data {
@@ -490,15 +583,11 @@ async fn read_queries(
                         // So all close frames should be treated as error.
 
                         log::warn!("websocket connection is closed normally");
-                        let mut keys = Vec::new();
-                        for e in queries_sender.iter() {
-                            keys.push(*e.key());
-                        }
-                        for k in keys {
-                            if let Some((_, sender)) = queries_sender.remove(&k) {
-                                let _ = sender.send(Err(RawError::new(WS_ERROR_NO::CONN_CLOSED.as_code(), "received close message")));
-                            }
-                        }
+                        mark_connection_closed(&connection_closed, &close_signal);
+                        fail_all_queries_with_connection_closed(
+                            &queries_sender,
+                            "received close message",
+                        );
 
                         break 'ws;
                     }
@@ -524,18 +613,11 @@ async fn read_queries(
             }
             _ = close_listener.changed() => {
                 log::trace!("close reader task");
-                let mut keys = Vec::new();
-                for e in queries_sender.iter() {
-                                    keys.push(*e.key());
-                                }
-                // queries_sender.for_each_async(|k, _| {
-                //     keys.push(*k);
-                // }).await;
-                for k in keys {
-                    if let Some((_, sender)) = queries_sender.remove(&k) {
-                        let _ = sender.send(Err(RawError::new(WS_ERROR_NO::CONN_CLOSED.as_code(), "close signal received")));
-                    }
-                }
+                connection_closed.store(true, Ordering::SeqCst);
+                fail_all_queries_with_connection_closed(
+                    &queries_sender,
+                    "close signal received",
+                );
                 break 'ws;
             }
         }
@@ -555,7 +637,9 @@ async fn read_queries(
     //     .await;
     for k in keys {
         if let Some((_, sender)) = queries_sender.remove(&k) {
-            let _ = sender.send(Err(RawError::from_string("websocket connection is closed")));
+            let _ = sender.send(Err(tdengine_ws_connection_closed_error(
+                "websocket reader task ended",
+            )));
         }
     }
 }
@@ -768,6 +852,7 @@ impl WsTaos {
                 sender: ws_cloned,
                 queries: queries2_cloned,
                 results,
+                connection_closed: Arc::new(AtomicBool::new(false)),
             },
         })
     }
@@ -846,6 +931,8 @@ impl WsTaos {
 
         let queries2_cloned = queries2.clone();
         let queries3 = queries2.clone();
+        let connection_closed = Arc::new(AtomicBool::new(false));
+        let reader_connection_closed = connection_closed.clone();
 
         let (ws, mut msg_recv) = tokio::sync::mpsc::channel(100);
         let ws2: tokio::sync::mpsc::Sender<WsMessage<bytes::Bytes>> = ws.clone();
@@ -889,8 +976,19 @@ impl WsTaos {
             }
         });
 
+        let reader_close_signal = tx.clone();
         tokio::spawn(async move {
-            read_queries(reader, queries2, fetches_sender, ws2, is_v3, close_listener).await
+            read_queries(
+                reader,
+                queries2,
+                fetches_sender,
+                ws2,
+                is_v3,
+                reader_close_signal,
+                reader_connection_closed,
+                close_listener,
+            )
+            .await
         });
         let ws_cloned = ws.clone();
 
@@ -905,6 +1003,7 @@ impl WsTaos {
                 sender: ws_cloned,
                 queries: queries2_cloned,
                 results,
+                connection_closed,
             },
         })
     }
@@ -1380,6 +1479,133 @@ mod tests {
     use futures::TryStreamExt;
 
     use super::*;
+
+    #[tokio::test]
+    async fn negative_timing_response_fails_pending_query_without_panicking() {
+        let payload = br#"{"code":0,"req_id":7,"action":"query","id":99,"timing":-130961449}"#;
+        let decode_error = serde_json::from_slice::<WsRecv>(payload)
+            .expect_err("negative timing must fail strict WsRecv decode");
+        assert_eq!(extract_req_id_from_json_payload(payload), Some(7));
+
+        let queries: QueryAgent = Arc::new(HashMap::new());
+        let (tx, rx) = query_channel();
+        queries.insert(7, tx);
+
+        fail_all_queries_with_decode_error(&queries, &decode_error);
+
+        let received = rx.await.expect("pending query must be notified");
+        let error = received.expect_err("decode failure must propagate as RawError");
+        assert_eq!(error.code(), WS_ERROR_NO::CONN_CLOSED.as_code());
+        assert!(
+            error.to_string().contains("websocket connection closed"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.message().contains("response decode failed"),
+            "unexpected error: {error}"
+        );
+        assert!(queries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn malformed_response_without_req_id_fails_all_pending_queries_without_panicking() {
+        let payload = br#"{"code":0,"action":"query","timing":-1}"#;
+        let decode_error = serde_json::from_slice::<WsRecv>(payload)
+            .expect_err("negative timing must fail strict WsRecv decode");
+
+        let queries: QueryAgent = Arc::new(HashMap::new());
+        let (tx1, rx1) = query_channel();
+        let (tx2, rx2) = query_channel();
+        queries.insert(10, tx1);
+        queries.insert(11, tx2);
+
+        fail_all_queries_with_decode_error(&queries, &decode_error);
+
+        for rx in [rx1, rx2] {
+            let received = rx.await.expect("pending query must be notified");
+            let error = received.expect_err("decode failure must propagate as RawError");
+            assert_eq!(error.code(), WS_ERROR_NO::CONN_CLOSED.as_code());
+            assert!(
+                error.to_string().contains("websocket connection closed"),
+                "unexpected error: {error}"
+            );
+            assert!(
+                error.message().contains("response decode failed"),
+                "unexpected error: {error}"
+            );
+        }
+        assert!(queries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn decode_failure_terminates_connection_and_followup_send_fails_fast() {
+        let queries: QueryAgent = Arc::new(HashMap::new());
+        let (ws, mut msg_recv) = tokio::sync::mpsc::channel(100);
+        let connection_closed = Arc::new(AtomicBool::new(false));
+        let sender = WsQuerySender {
+            version: Version {
+                version: "3.3.1.0".to_string(),
+                is_support_binary_sql: true,
+            },
+            req_id: Default::default(),
+            results: Arc::new(HashMap::new()),
+            sender: ws,
+            queries: queries.clone(),
+            connection_closed: connection_closed.clone(),
+        };
+
+        let first_sender = sender.clone();
+        let first = tokio::spawn(async move {
+            first_sender
+                .send_recv(WsSend::Query {
+                    req_id: 7,
+                    sql: "select 1".to_string(),
+                })
+                .await
+        });
+        let _sent = msg_recv
+            .recv()
+            .await
+            .expect("first request must reach the writer channel");
+
+        let payload = br#"{"code":0,"req_id":7,"action":"query","id":99,"timing":-130961449}"#;
+        let decode_error = serde_json::from_slice::<WsRecv>(payload)
+            .expect_err("negative timing must fail strict WsRecv decode");
+        let (close_signal, _close_listener) = watch::channel(false);
+        mark_connection_closed(&connection_closed, &close_signal);
+        fail_all_queries_with_decode_error(&queries, &decode_error);
+
+        let first_error = first
+            .await
+            .expect("first task must not panic")
+            .expect_err("decode failure must fail the in-flight request");
+        assert_eq!(first_error.code(), WS_ERROR_NO::CONN_CLOSED.as_code());
+        assert!(
+            first_error.message().contains("response decode failed"),
+            "unexpected error: {first_error}"
+        );
+
+        let second = tokio::time::timeout(
+            Duration::from_millis(50),
+            sender.send_recv(WsSend::Query {
+                req_id: 8,
+                sql: "select 1".to_string(),
+            }),
+        )
+        .await
+        .expect("follow-up request must fail fast instead of hanging")
+        .expect_err("closed connection must reject follow-up request");
+        assert_eq!(second.code(), WS_ERROR_NO::CONN_CLOSED.as_code());
+        assert!(
+            second.message().contains("reader closed"),
+            "unexpected error: {second}"
+        );
+        assert!(queries.is_empty());
+        assert!(
+            msg_recv.try_recv().is_err(),
+            "closed sender must not enqueue"
+        );
+    }
 
     #[test]
     fn test_is_support_binary_sql() -> anyhow::Result<()> {
