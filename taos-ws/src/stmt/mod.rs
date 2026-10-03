@@ -364,7 +364,9 @@ impl Stmt {
                                             log::trace!("stmt init done: {{ req_id: {}, stmt_id: {:?}}}", req_id, stmt_id);
                                             if let Some((_, sender)) = queries_sender.remove(&req_id)
                                             {
-                                                sender.send(stmt_id).unwrap();
+                                                if sender.send(stmt_id).is_err() {
+                                                    log::debug!("req_id {req_id}: requester gave up, discarding late stmt init response");
+                                                }
                                             }  else {
                                                 log::trace!("Stmt init failed because req id {req_id} not exist");
                                             }
@@ -373,7 +375,9 @@ impl Stmt {
                                             if let Some(sender) = fetches_sender.get(&stmt_id) {
                                                 log::trace!("send data to fetches with id {}", stmt_id);
                                                 // let res = res.clone();
-                                                sender.send(res).await.unwrap();
+                                                if sender.send(res).await.is_err() {
+                                                    log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                                }
                                             // }) {
 
                                             } else {
@@ -384,7 +388,9 @@ impl Stmt {
                                             if let Some(sender) = prepare_result_fetches_sender.get(&stmt_id) {
                                                 log::trace!("send data to fetches with id {}", stmt_id);
 
-                                                sender.send(res).await.unwrap();
+                                                if sender.send(res).await.is_err() {
+                                                    log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                                }
 
                                             } else {
                                                 log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
@@ -394,7 +400,9 @@ impl Stmt {
                                             if let Some(sender) = fields_fetches_sender.get(&stmt_id) {
                                                 log::trace!("send data to fetches with id {}", stmt_id);
                                                 // let res = res.clone();
-                                                sender.send(res).await.unwrap();
+                                                if sender.send(res).await.is_err() {
+                                                    log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                                }
 
                                             } else {
                                                 log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
@@ -403,7 +411,9 @@ impl Stmt {
                                         StmtOk::StmtParam(stmt_id, res) => {
                                             if let Some(sender) = param_fetches_sender.get(&stmt_id) {
                                                 log::trace!("send data to fetches with id {}", stmt_id);
-                                                sender.send(res).await.unwrap();
+                                                if sender.send(res).await.is_err() {
+                                                    log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                                }
                                             } else {
                                                 log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
                                             }
@@ -411,7 +421,9 @@ impl Stmt {
                                         StmtOk::StmtUseResult(stmt_id, res) => {
                                             if let Some(sender) = use_result_fetches_sender.get(&stmt_id) {
                                                 log::trace!("send data to fetches with id {}", stmt_id);
-                                                sender.send(res).await.unwrap();
+                                                if sender.send(res).await.is_err() {
+                                                    log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                                }
                                             } else {
                                                 log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
                                             }
@@ -568,7 +580,9 @@ impl Stmt {
                                         log::trace!("stmt init done: {{ req_id: {}, stmt_id: {:?}}}", req_id, stmt_id);
                                         if let Some((_, sender)) = queries_sender.remove(&req_id)
                                         {
-                                            sender.send(stmt_id).unwrap();
+                                            if sender.send(stmt_id).is_err() {
+                                                log::debug!("req_id {req_id}: requester gave up, discarding late stmt init response");
+                                            }
                                         }  else {
                                             log::trace!("Stmt init failed because req id {req_id} not exist");
                                         }
@@ -577,7 +591,9 @@ impl Stmt {
                                         if let Some(sender) = fetches_sender.get(&stmt_id) {
                                             log::trace!("send data to fetches with id {}", stmt_id);
 
-                                            sender.send(res).await.unwrap();
+                                            if sender.send(res).await.is_err() {
+                                                log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                            }
 
                                         } else {
                                             log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
@@ -586,7 +602,9 @@ impl Stmt {
                                     StmtOk::StmtPrepare(stmt_id, res) => {
                                         if let Some(sender) = prepare_result_fetches_sender.get(&stmt_id) {
                                             log::trace!("send data to fetches with id {}", stmt_id);
-                                            sender.send(res).await.unwrap();
+                                            if sender.send(res).await.is_err() {
+                                                log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                            }
                                         } else {
                                             log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
                                         }
@@ -595,7 +613,9 @@ impl Stmt {
                                         if let Some(sender) = fields_fetches_sender.get(&stmt_id) {
                                             log::trace!("send data to fetches with id {}", stmt_id);
 
-                                            sender.send(res).await.unwrap();
+                                            if sender.send(res).await.is_err() {
+                                                log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                            }
 
                                         } else {
                                             log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
@@ -604,7 +624,9 @@ impl Stmt {
                                     StmtOk::StmtParam(stmt_id, res) => {
                                         if let Some(sender) = param_fetches_sender.get(&stmt_id) {
                                             log::trace!("send data to fetches with id {}", stmt_id);
-                                            sender.send(res).await.unwrap();
+                                            if sender.send(res).await.is_err() {
+                                                log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                            }
                                         } else {
                                             log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
                                         }
@@ -612,7 +634,9 @@ impl Stmt {
                                     StmtOk::StmtUseResult(stmt_id, res) => {
                                         if let Some(sender) = use_result_fetches_sender.get(&stmt_id) {
                                             log::trace!("send data to fetches with id {}", stmt_id);
-                                            sender.send(res).await.unwrap();
+                                            if sender.send(res).await.is_err() {
+                                                log::debug!("stmt_id {stmt_id}: requester gave up, discarding late response");
+                                            }
                                         } else {
                                             log::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
                                         }

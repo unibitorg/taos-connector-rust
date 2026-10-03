@@ -575,7 +575,7 @@ async fn read_queries(
                             }
 
                             if let Some((_, sender)) = queries_sender.remove(&block_req_id) {
-                                sender.send(Ok(WsRecvData::BlockNew {
+                                if sender.send(Ok(WsRecvData::BlockNew {
                                     block_version,
                                     timing,
                                     block_req_id,
@@ -583,7 +583,9 @@ async fn read_queries(
                                     block_message,
                                     finished,
                                     raw: result_block.to_vec(),
-                                })).unwrap();
+                                })).is_err() {
+                                    log::debug!("req_id {block_req_id}: requester gave up, discarding late BlockNew response");
+                                }
                             } else {
                                 log::warn!("req_id {block_req_id} not detected, message might be lost");
                             }
@@ -596,7 +598,9 @@ async fn read_queries(
                                 // v3
                                 if let Some((_, sender)) = queries_sender.remove(&req_id) {
                                     log::trace!("send data to fetches with id {}", res_id);
-                                    sender.send(Ok(WsRecvData::Block { timing, raw: block[offset..].to_vec() })).unwrap();
+                                    if sender.send(Ok(WsRecvData::Block { timing, raw: block[offset..].to_vec() })).is_err() {
+                                        log::debug!("req_id {req_id} res_id {res_id}: requester gave up, discarding late block response");
+                                    }
                                 } else {
                                     log::warn!("req_id {res_id} not detected, message might be lost");
                                 }
@@ -604,7 +608,9 @@ async fn read_queries(
                                 // v2
                                 if let Some((_, sender)) = queries_sender.remove(&req_id) {
                                     log::trace!("send data to fetches with id {}", res_id);
-                                    sender.send(Ok(WsRecvData::BlockV2 { timing, raw: block[offset..].to_vec() })).unwrap();
+                                    if sender.send(Ok(WsRecvData::BlockV2 { timing, raw: block[offset..].to_vec() })).is_err() {
+                                        log::debug!("req_id {req_id} res_id {res_id}: requester gave up, discarding late block response");
+                                    }
                                 } else {
                                     log::warn!("req_id {res_id} not detected, message might be lost");
                                 }
@@ -1521,6 +1527,75 @@ mod tests {
     use futures::TryStreamExt;
 
     use super::*;
+
+    fn block_new_frame(req_id: u64) -> Vec<u8> {
+        let mut f = Vec::new();
+        f.extend_from_slice(&u64::MAX.to_le_bytes()); // marks BlockNew
+        f.extend_from_slice(&0u64.to_le_bytes()); // action
+        f.extend_from_slice(&1u16.to_le_bytes()); // block_version
+        f.extend_from_slice(&0u64.to_le_bytes()); // timing
+        f.extend_from_slice(&req_id.to_le_bytes()); // block_req_id
+        f.extend_from_slice(&0u32.to_le_bytes()); // block_code
+        f.extend_from_slice(&0u32.to_le_bytes()); // empty block_message
+        f.extend_from_slice(&0u64.to_le_bytes()); // result_id
+        f.push(1); // finished
+        f
+    }
+
+    #[tokio::test]
+    async fn late_response_after_requester_dropped_does_not_panic_and_loop_continues() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (go_tx, go_rx) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut server = tokio_tungstenite::accept_async(stream).await.unwrap();
+            // Wait until the requester of req_id 1 has given up.
+            go_rx.await.unwrap();
+            server.send(Message::Binary(block_new_frame(1))).await.unwrap();
+            server.send(Message::Binary(block_new_frame(2))).await.unwrap();
+            // keep the connection open until the client goes away
+            while server.next().await.is_some() {}
+        });
+
+        let codec = crate::ClientConfig::default()
+            .async_connect_with(format!("ws://{addr}"), ws_tool::codec::AsyncDeflateCodec::check_fn)
+            .await
+            .unwrap();
+        let (reader, _writer) = codec.split();
+
+        let queries: QueryAgent = Arc::new(HashMap::new());
+        let fetches = Arc::new(QueryResMapper::new());
+        let (ws2, _ws_rx) = tokio::sync::mpsc::channel(8);
+        let (close_tx, close_rx) = watch::channel(false);
+
+        // req 1: requester times out and drops its receiver; req 2 stays alive.
+        let (tx1, rx1) = query_channel();
+        let (tx2, rx2) = query_channel();
+        queries.insert(1, tx1);
+        queries.insert(2, tx2);
+        drop(rx1);
+
+        let reader_task = tokio::spawn(read_queries(
+            reader,
+            queries.clone(),
+            fetches,
+            ws2,
+            true,
+            close_tx,
+            Arc::new(AtomicBool::new(false)),
+            close_rx,
+        ));
+        go_tx.send(()).unwrap();
+
+        let received = tokio::time::timeout(Duration::from_secs(5), rx2)
+            .await
+            .expect("reader loop must keep processing after a dropped receiver")
+            .expect("sender must not be dropped")
+            .expect("response must be Ok");
+        assert!(matches!(received, WsRecvData::BlockNew { block_req_id: 2, .. }));
+        assert!(!reader_task.is_finished(), "reader loop must still be running");
+    }
 
     #[tokio::test]
     async fn negative_timing_response_fails_pending_query_without_panicking() {

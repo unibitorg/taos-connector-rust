@@ -122,7 +122,9 @@ async fn read_queries(
                             WsRecvData::Insert(_) => {
                                 if let Some((_, sender)) = queries_sender.remove(&req_id)
                                 {
-                                    sender.send(ok.map(|_| data)).unwrap();
+                                    if sender.send(ok.map(|_| data)).is_err() {
+                                        log::debug!("req_id {req_id}: requester gave up, discarding late response");
+                                    }
                                 } else {
                                     debug_assert!(!queries_sender.contains_key(&req_id));
                                     log::warn!("req_id {req_id} not detected, message might be lost");
@@ -151,7 +153,9 @@ async fn read_queries(
                                 // v3
                                 if let Some((_, sender)) = queries_sender.remove(&req_id) {
                                     log::trace!("send data to fetches with id {}", res_id);
-                                    sender.send(Ok(WsRecvData::Block { timing, raw: block[offset..].to_vec() })).unwrap();
+                                    if sender.send(Ok(WsRecvData::Block { timing, raw: block[offset..].to_vec() })).is_err() {
+                                        log::debug!("req_id {req_id} res_id {res_id}: requester gave up, discarding late block response");
+                                    }
                                 } else {
                                     log::warn!("req_id {res_id} not detected, message might be lost");
                                 }
@@ -159,7 +163,9 @@ async fn read_queries(
                                 // v2
                                 if let Some((_, sender)) = queries_sender.remove(&req_id) {
                                     log::trace!("send data to fetches with id {}", res_id);
-                                    sender.send(Ok(WsRecvData::BlockV2 { timing, raw: block[offset..].to_vec() })).unwrap();
+                                    if sender.send(Ok(WsRecvData::BlockV2 { timing, raw: block[offset..].to_vec() })).is_err() {
+                                        log::debug!("req_id {req_id} res_id {res_id}: requester gave up, discarding late block response");
+                                    }
                                 } else {
                                     log::warn!("req_id {res_id} not detected, message might be lost");
                                 }
