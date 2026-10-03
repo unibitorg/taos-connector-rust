@@ -1099,7 +1099,9 @@ impl TmqBuilder {
 
                                     if let Some((_, sender)) = queries_sender.remove(&req_id)
                                     {
-                                        sender.send(Ok(TmqRecvData::Bytes(part))).unwrap();
+                                        if sender.send(Ok(TmqRecvData::Bytes(part))).is_err() {
+                                            log::debug!("req_id {req_id}: requester gave up, discarding late tmq response");
+                                        }
                                     }  else {
                                         log::warn!("poll message received but no receiver alive");
                                     }
@@ -1396,7 +1398,9 @@ impl TmqBuilder {
 
                                 if let Some((_, sender)) = queries_sender.remove(&req_id) {
                                     log::trace!("send data to fetches with id {}", req_id);
-                                    sender.send(Ok(TmqRecvData::Bytes(part.into()))).unwrap();
+                                    if sender.send(Ok(TmqRecvData::Bytes(part.into()))).is_err() {
+                                        log::debug!("req_id {req_id}: requester gave up, discarding late tmq response");
+                                    }
                                 } else {
                                     log::warn!("req_id {req_id} not detected, message might be lost");
                                 }
