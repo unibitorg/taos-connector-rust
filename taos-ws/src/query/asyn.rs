@@ -685,23 +685,65 @@ async fn read_queries(
     }
 }
 
-pub fn compare_versions(v1: &str, v2: &str) -> std::cmp::Ordering {
-    let nums1: Vec<u32> = v1.split('.').take(4).map(|s| s.parse().unwrap()).collect();
-    let nums2: Vec<u32> = v2.split('.').take(4).map(|s| s.parse().unwrap()).collect();
-
-    nums1.cmp(&nums2)
+/// Parse a dot-separated TDengine version into its leading numeric components.
+///
+/// Returns a typed [`RawError`] when a component is missing or not a valid
+/// `u32`, so a malformed version can never panic the client.
+fn parse_version_components(version: &str) -> RawResult<Vec<u32>> {
+    version
+        .split('.')
+        .take(4)
+        .map(|component| {
+            component.parse::<u32>().map_err(|err| {
+                RawError::from_string(format!(
+                    "invalid TDengine version `{version}`: cannot parse component `{component}`: {err}"
+                ))
+            })
+        })
+        .collect()
 }
 
-pub fn is_greater_than_or_equal_to(v1: &str, v2: &str) -> bool {
-    match compare_versions(v1, v2) {
-        std::cmp::Ordering::Less => false,
-        std::cmp::Ordering::Equal => true,
-        std::cmp::Ordering::Greater => true,
-    }
+pub fn compare_versions(v1: &str, v2: &str) -> RawResult<std::cmp::Ordering> {
+    Ok(parse_version_components(v1)?.cmp(&parse_version_components(v2)?))
 }
 
-pub fn is_support_binary_sql(v1: &str) -> bool {
+pub fn is_greater_than_or_equal_to(v1: &str, v2: &str) -> RawResult<bool> {
+    Ok(!matches!(
+        compare_versions(v1, v2)?,
+        std::cmp::Ordering::Less
+    ))
+}
+
+pub fn is_support_binary_sql(v1: &str) -> RawResult<bool> {
     is_greater_than_or_equal_to(v1, "3.3.0.8")
+}
+
+/// Interpret the payload of the first frame of the `version` handshake.
+///
+/// Only a well-formed `version` response carrying a numeric version is
+/// accepted. Malformed JSON, a declared protocol error, an unexpected action or
+/// an unparsable version are reported as explicit errors instead of
+/// synthesising a `2.x` fallback or panicking.
+fn version_from_handshake_payload(payload: &[u8]) -> RawResult<String> {
+    let v: WsRecv = serde_json::from_slice(payload).map_err(|err| {
+        RawError::new(
+            WS_ERROR_NO::WEBSOCKET_ERROR.as_code(),
+            format!("decode version handshake response failed: {err}"),
+        )
+    })?;
+    let (_req_id, data, ok) = v.ok();
+    match data {
+        WsRecvData::Version { version } => {
+            ok?;
+            // Validate now so capability selection can never panic later.
+            parse_version_components(&version)?;
+            Ok(version)
+        }
+        data => Err(RawError::new(
+            WS_ERROR_NO::WEBSOCKET_ERROR.as_code(),
+            format!("unexpected version handshake frame: {data:?}"),
+        )),
+    }
 }
 
 impl WsTaos {
@@ -752,7 +794,7 @@ impl WsTaos {
                                     ok?;
                                     return Ok(version);
                                 }
-                                _ => return Ok("2.x".to_string()),
+                                data => bail!("unexpected version handshake frame: {data:?}"),
                             }
                         }
                         Ok(Message::Ping(bytes)) => {
@@ -762,11 +804,11 @@ impl WsTaos {
                                     .context("Send pong message error")
                             })?;
                             if count >= max_non_version {
-                                return Ok("2.x".to_string());
+                                bail!("version handshake received too many non-version frames");
                             }
                             count += 1;
                         }
-                        _ => return Ok("2.x".to_string()),
+                        message => bail!("unexpected version handshake message: {message:?}"),
                     }
                 } else {
                     bail!("Expect version message, but got nothing");
@@ -778,10 +820,14 @@ impl WsTaos {
             Ok(Err(err)) => {
                 return Err(RawError::any(err).context("Version fetching error"));
             }
-            Err(_) => "2.x".to_string(),
+            Err(_) => {
+                return Err(RawError::from_string(
+                    "version handshake timed out waiting for a version response",
+                ))
+            }
         };
         let _is_v3 = !version.starts_with('2');
-        let is_support_binary_sql = is_support_binary_sql(&version);
+        let is_support_binary_sql = is_support_binary_sql(&version)?;
 
         let login = WsSend::Conn {
             req_id,
@@ -916,27 +962,29 @@ impl WsTaos {
 
         let duration = Duration::from_secs(2);
         let version = match tokio::time::timeout(duration, reader.receive()).await {
-            Ok(Ok(frame)) => {
-                let (header, payload) = frame;
-                let code = header.code;
-                match code {
-                    OpCode::Text => {
-                        let v: WsRecv = serde_json::from_slice(&payload).unwrap();
-                        let (_, data, ok) = v.ok();
-                        match data {
-                            WsRecvData::Version { version } => {
-                                ok?;
-                                version
-                            }
-                            _ => "2.x".to_string(),
-                        }
-                    }
-                    _ => "2.x".to_string(),
+            Ok(Ok((header, payload))) => match header.code {
+                OpCode::Text => version_from_handshake_payload(payload)?,
+                code => {
+                    return Err(RawError::new(
+                        WS_ERROR_NO::WEBSOCKET_ERROR.as_code(),
+                        format!("unexpected version handshake frame opcode: {code:?}"),
+                    ))
                 }
+            },
+            Ok(Err(err)) => {
+                return Err(RawError::new(
+                    WS_ERROR_NO::WEBSOCKET_ERROR.as_code(),
+                    format!("version handshake receive failed: {err}"),
+                ))
             }
-            _ => "2.x".to_string(),
+            Err(_) => {
+                return Err(RawError::new(
+                    WS_ERROR_NO::WEBSOCKET_ERROR.as_code(),
+                    "version handshake timed out after 2s waiting for a version response",
+                ))
+            }
         };
-        let is_support_binary_sql = is_support_binary_sql(&version);
+        let is_support_binary_sql = is_support_binary_sql(&version)?;
         let is_v3 = !version.starts_with('2');
 
         let login = WsSend::Conn {
@@ -1542,6 +1590,135 @@ mod tests {
         f
     }
 
+    /// Serve one fake WebSocket connection that answers the SDK `version`
+    /// handshake. `responder` receives each decoded text request and returns
+    /// the raw text reply, or `None` to stay silent (so the caller can exercise
+    /// the existing 2s deadline).
+    async fn spawn_fake_handshake_ws<F>(responder: F) -> String
+    where
+        F: FnMut(&str) -> Option<String> + Send + 'static,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut server = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let mut responder = responder;
+            while let Some(Ok(message)) = server.next().await {
+                match message {
+                    Message::Text(text) => {
+                        if let Some(reply) = responder(&text) {
+                            server.send(Message::Text(reply)).await.unwrap();
+                        }
+                    }
+                    Message::Ping(bytes) => {
+                        let _ = server.send(Message::Pong(bytes)).await;
+                    }
+                    _ => {}
+                }
+            }
+        });
+        format!("ws://{addr}")
+    }
+
+    fn version_response(version: &str) -> String {
+        format!(r#"{{"code":0,"message":"","action":"version","version":"{version}"}}"#)
+    }
+
+    const CONN_OK: &str = r#"{"code":0,"message":"","action":"conn"}"#;
+
+    #[tokio::test]
+    async fn version_handshake_accepts_real_wire_version() {
+        let dsn = spawn_fake_handshake_ws(|request| {
+            if request.contains("version") {
+                Some(version_response("3.3.7.5"))
+            } else {
+                Some(CONN_OK.to_string())
+            }
+        })
+        .await;
+
+        let builder = TaosBuilder::from_dsn(dsn).unwrap();
+        let client = WsTaos::from_wsinfo(&builder)
+            .await
+            .expect("valid version handshake must succeed without authentication");
+        assert_eq!(client.version(), "3.3.7.5");
+        assert!(client.is_support_binary_sql());
+    }
+
+    #[tokio::test]
+    async fn version_handshake_rejects_invalid_numeric_version_without_panicking() {
+        let dsn = spawn_fake_handshake_ws(|_| Some(version_response("2.x"))).await;
+        let builder = TaosBuilder::from_dsn(dsn).unwrap();
+        let err = WsTaos::from_wsinfo(&builder)
+            .await
+            .expect_err("numeric-invalid version must be rejected");
+        assert!(
+            err.to_string().contains("invalid TDengine version `2.x`"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn version_handshake_rejects_non_version_frame_without_panicking() {
+        let dsn = spawn_fake_handshake_ws(|_| Some(CONN_OK.to_string())).await;
+        let builder = TaosBuilder::from_dsn(dsn).unwrap();
+        let err = WsTaos::from_wsinfo(&builder)
+            .await
+            .expect_err("non-version first frame must be rejected");
+        assert!(
+            err.to_string()
+                .contains("unexpected version handshake frame"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn version_handshake_rejects_malformed_text_without_panicking() {
+        let dsn = spawn_fake_handshake_ws(|_| Some("not-json".to_string())).await;
+        let builder = TaosBuilder::from_dsn(dsn).unwrap();
+        let err = WsTaos::from_wsinfo(&builder)
+            .await
+            .expect_err("malformed handshake JSON must be rejected");
+        assert!(
+            err.to_string()
+                .contains("decode version handshake response failed"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn version_handshake_rejects_declared_error_before_capability_selection() {
+        let dsn = spawn_fake_handshake_ws(|_| {
+            Some(
+                r#"{"code":1,"message":"version refused","action":"version","version":"3.3.7.5"}"#
+                    .to_string(),
+            )
+        })
+        .await;
+        let builder = TaosBuilder::from_dsn(dsn).unwrap();
+        let err = WsTaos::from_wsinfo(&builder)
+            .await
+            .expect_err("declared handshake error must propagate");
+        assert!(
+            err.to_string().contains("version refused"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn version_handshake_times_out_with_error_without_panicking() {
+        let dsn = spawn_fake_handshake_ws(|_| None).await;
+        let builder = TaosBuilder::from_dsn(dsn).unwrap();
+        let err = WsTaos::from_wsinfo(&builder)
+            .await
+            .expect_err("missing version response must time out as an error");
+        assert!(
+            err.to_string().contains("version handshake timed out"),
+            "unexpected error: {err}"
+        );
+    }
+
     #[tokio::test]
     async fn late_response_after_requester_dropped_does_not_panic_and_loop_continues() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1728,13 +1905,34 @@ mod tests {
     fn test_is_support_binary_sql() -> anyhow::Result<()> {
         std::env::set_var("RUST_LOG", "debug");
 
-        let version_a: &str = "3.3.0.0";
-        let version_b: &str = "3.3.1.0";
-        let version_c: &str = "2.6.0";
+        // Preserve the existing legal numeric comparison shape, including the
+        // 3.3.0.8 threshold and the real TDengine wire version.
+        for (version, expected) in [
+            ("3.3.7.5", true),
+            ("3.3.0.9", true),
+            ("3.3.0.8", true),
+            ("3.3.0.7", false),
+            ("3.3.0.0", false),
+            ("3.3.1.0", true),
+            ("2.6.0", false),
+        ] {
+            assert_eq!(
+                is_support_binary_sql(version).unwrap(),
+                expected,
+                "unexpected capability for version {version}"
+            );
+        }
 
-        assert_eq!(is_support_binary_sql(version_a), false);
-        assert_eq!(is_support_binary_sql(version_b), true);
-        assert_eq!(is_support_binary_sql(version_c), false);
+        // Invalid numeric versions must surface a typed error instead of
+        // panicking or silently defaulting to an ordering.
+        for invalid in ["2.x", "3.3.bad.5", ""] {
+            let err =
+                is_support_binary_sql(invalid).expect_err("invalid version must not be parsed");
+            assert!(
+                err.to_string().contains("invalid TDengine version"),
+                "unexpected error for `{invalid}`: {err}"
+            );
+        }
 
         Ok(())
     }
