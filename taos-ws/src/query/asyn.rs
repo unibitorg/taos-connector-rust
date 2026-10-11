@@ -1146,6 +1146,7 @@ impl WsTaos {
         // Connection watcher
         let (tx, mut rx) = watch::channel(false);
         let close_listener = rx.clone();
+        let writer_close_signal = tx.clone();
 
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_millis(10));
@@ -1158,11 +1159,19 @@ impl WsTaos {
                     }
                     Some(msg) = msg_recv.recv() => {
                         // dbg!(&msg);
+                        if writer_connection_closed.load(Ordering::SeqCst) { break 'ws; }
                         let opcode = msg.code;
                         let msg = msg.data;
-                        if let Err(err) = sender.send(opcode, &msg).await {
-                            log::error!("Write websocket error: {}", err);
+                        let sent = tokio::select! {
+                            result = sender.send(opcode, &msg) => result,
+                            _ = rx.changed() => {
                                 writer_connection_closed.store(true, Ordering::SeqCst);
+                                break 'ws;
+                            }
+                        };
+                        if let Err(err) = sent {
+                            log::error!("Write websocket error: {}", err);
+                                mark_connection_closed(&writer_connection_closed, &writer_close_signal);
                                 let mut keys = Vec::new();
                                 queries3.iter().for_each(|r| keys.push(*r.key()));
 
