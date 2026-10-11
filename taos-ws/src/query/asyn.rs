@@ -1451,6 +1451,14 @@ impl WsTaos {
         }
     }
 
+    pub(crate) fn close(&self) {
+        mark_connection_closed(&self.sender.connection_closed, &self.close_signal);
+        fail_all_queries_with_connection_closed(
+            &self.sender.queries,
+            "query connection retired by caller",
+        );
+    }
+
     pub fn version(&self) -> &str {
         &self.sender.version.version
     }
@@ -1749,6 +1757,35 @@ mod tests {
         let _ = task.await;
         assert!(sender.queries.is_empty());
         assert!(sender.results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn lifecycle_retire_fails_pending_requests() {
+        let (sender, mut rx) = lifecycle_sender();
+        let mut closed = sender.close_signal.subscribe();
+        let client = WsTaos {
+            close_signal: sender.close_signal.clone(),
+            sender: sender.clone(),
+        };
+        let worker = sender.clone();
+        let task = tokio::spawn(async move {
+            worker
+                .send_recv(WsSend::Query {
+                    req_id: 45,
+                    sql: "select 1".into(),
+                })
+                .await
+        });
+        rx.recv().await.unwrap();
+        client.close();
+        closed.changed().await.unwrap();
+        assert!(*closed.borrow());
+        assert_eq!(
+            task.await.unwrap().unwrap_err().code(),
+            WS_ERROR_NO::CONN_CLOSED.as_code()
+        );
+        assert!(sender.queries.is_empty());
+        assert!(sender.ensure_open().is_err());
     }
 
     #[tokio::test]

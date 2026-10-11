@@ -22,6 +22,15 @@ pub struct Taos {
 }
 
 impl Taos {
+    /// Retire an initialized WebSocket query session and fail its pending IO.
+    /// The caller must stop active server queries separately; closing a socket
+    /// alone is not a server-side query cancellation acknowledgement.
+    pub fn close_query_connection(&self) {
+        if let Some(ws) = self.async_client.get() {
+            ws.close();
+        }
+    }
+
     pub fn version(&self) -> &str {
         crate::block_in_place_or_global(self.client()).version()
     }
