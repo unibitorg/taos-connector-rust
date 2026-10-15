@@ -27,7 +27,7 @@ impl Default for ClientConfig {
             window: Default::default(),
             context_take_over: Default::default(),
             extra_headers: Default::default(),
-            set_socket_fn: Box::new(|_| Ok(())),
+            set_socket_fn: Box::new(|stream| stream.set_nodelay(true).map_err(WsError::IOError)),
         }
     }
 }
