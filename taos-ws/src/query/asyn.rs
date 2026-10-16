@@ -38,7 +38,87 @@ type WsSender = tokio::sync::mpsc::Sender<WsMessage<bytes::Bytes>>;
 
 use futures::channel::oneshot;
 use oneshot::channel as query_channel;
-type QueryChannelSender = oneshot::Sender<RawResult<WsRecvData>>;
+// A successful Query response owns its result until the caller claims it.
+// This also covers send-success followed by receiver cancellation before polling.
+struct QueryReply {
+    data: Option<WsRecvData>,
+    release: Option<ResultLease>,
+}
+
+impl QueryReply {
+    fn plain(data: WsRecvData) -> Self {
+        Self {
+            data: Some(data),
+            release: None,
+        }
+    }
+
+    fn into_data(mut self) -> WsRecvData {
+        self.release = None;
+        self.data.take().expect("query reply data is consumed once")
+    }
+}
+
+impl Debug for QueryReply {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("QueryReply").field(&self.data).finish()
+    }
+}
+
+impl Drop for QueryReply {
+    fn drop(&mut self) {
+        if let Some(lease) = self.release.take() {
+            lease.release();
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ResultLease {
+    args: WsResArgs,
+    live: Arc<HashMap<ResId, ()>>,
+    sender: WsSender,
+    closed: ConnectionClosed,
+    close_signal: watch::Sender<bool>,
+}
+
+impl ResultLease {
+    // Claim ownership synchronously, before scheduling IO. Fetch completion,
+    // receiver cancellation and ResultSet Drop may race, but only one wins.
+    fn release(self) {
+        if self.live.remove(&self.args.id).is_none() {
+            return;
+        }
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
+        let clean = async move {
+            log::debug!(
+                "free result: req_id={} result_id={}",
+                self.args.req_id,
+                self.args.id
+            );
+            if self
+                .sender
+                .send_timeout(
+                    WsSend::FreeResult(self.args).to_msg(),
+                    Duration::from_secs(1),
+                )
+                .await
+                .is_err()
+            {
+                mark_connection_closed(&self.closed, &self.close_signal);
+            }
+        };
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(clean);
+        } else {
+            std::thread::spawn(move || taos_query::block_in_place_or_global(clean));
+        }
+    }
+}
+
+type QueryChannelSender = oneshot::Sender<RawResult<QueryReply>>;
 // use tokio::sync::mpsc::unbounded_channel as query_channel;
 // type QueryChannelSender = tokio::sync::mpsc::UnboundedSender<Result<WsRecvData, RawError>>;
 type QueryInner = HashMap<ReqId, QueryChannelSender>;
@@ -121,6 +201,26 @@ struct WsQuerySender {
     sender: WsSender,
     queries: QueryAgent,
     connection_closed: ConnectionClosed,
+    live_results: Arc<HashMap<ResId, ()>>,
+    close_signal: watch::Sender<bool>,
+}
+
+struct PendingRequest {
+    // ResultSet caches a self-borrowing fetch future and drops sender first.
+    // Cancellation must not borrow that field during future destruction.
+    queries: QueryAgent,
+    results: Arc<QueryResMapper>,
+    req_id: ReqId,
+    legacy_result: Option<ResId>,
+}
+
+impl Drop for PendingRequest {
+    fn drop(&mut self) {
+        self.queries.remove(&self.req_id);
+        if let Some(id) = self.legacy_result {
+            self.results.remove_if(&id, |_, req| *req == self.req_id);
+        }
+    }
 }
 
 impl WsQuerySender {
@@ -145,6 +245,12 @@ impl WsQuerySender {
 
         self.ensure_open()?;
         self.queries.insert(req_id, tx);
+        let mut pending = PendingRequest {
+            queries: self.queries.clone(),
+            results: self.results.clone(),
+            req_id,
+            legacy_result: None,
+        };
         if let Err(err) = self.ensure_open() {
             self.queries.remove(&req_id);
             return Err(err);
@@ -160,6 +266,7 @@ impl WsQuerySender {
                     )))?;
                 }
                 self.results.insert(args.id, args.req_id);
+                pending.legacy_result = Some(args.id);
                 if let Err(err) = self.ensure_open() {
                     self.queries.remove(&req_id);
                     self.results.remove(&args.id);
@@ -215,7 +322,7 @@ impl WsQuerySender {
             tdengine_ws_connection_closed_error(format!("websocket response channel closed: {err}"))
         })??;
         log::trace!("[req id: {req_id}] message received: {res:?}");
-        Ok(res)
+        Ok(res.into_data())
     }
     async fn send_only(&self, msg: WsSend) -> RawResult<()> {
         let send_timeout = Duration::from_millis(1000);
@@ -223,14 +330,6 @@ impl WsQuerySender {
         self.sender
             .send_timeout(msg.to_msg(), send_timeout)
             .await
-            .map_err(Error::from)?;
-        Ok(())
-    }
-
-    fn send_blocking(&self, msg: WsSend) -> RawResult<()> {
-        self.ensure_open()?;
-        self.sender
-            .blocking_send(msg.to_msg())
             .map_err(Error::from)?;
         Ok(())
     }
@@ -292,7 +391,14 @@ impl Drop for ResultSet {
             }
 
             if !completed {
-                let _ = sender.send_blocking(WsSend::FreeResult(args));
+                ResultLease {
+                    args,
+                    live: sender.live_results.clone(),
+                    sender: sender.sender.clone(),
+                    closed: sender.connection_closed.clone(),
+                    close_signal: sender.close_signal.clone(),
+                }
+                .release();
             }
 
             if let Some(closer) = closer {
@@ -408,6 +514,7 @@ async fn read_queries(
     mut reader: AsyncDeflateRecv<ReadHalf<BufStream<AsyncStream>>>,
     queries_sender: QueryAgent,
     fetches_sender: Arc<QueryResMapper>,
+    live_results: Arc<HashMap<ResId, ()>>,
     ws2: WsSender,
     is_v3: bool,
     close_signal: watch::Sender<bool>,
@@ -415,10 +522,11 @@ async fn read_queries(
     mut close_listener: watch::Receiver<bool>,
 ) {
     let ws3 = ws2.clone();
+    let mut ping_close = close_listener.clone();
     tokio::spawn(async move {
         let mut interval = time::interval(Duration::from_secs(29));
         loop {
-            interval.tick().await;
+            tokio::select! { _ = interval.tick() => {}, _ = ping_close.changed() => break }
             if let Err(err) = ws3
                 .send(WsMessage {
                     code: OpCode::Ping,
@@ -468,34 +576,30 @@ async fn read_queries(
 
                         let (req_id, data, ok) = v.ok();
                         match &data {
-                            WsRecvData::Query(_) => {
-                                if let Some((_, sender)) = queries_sender.remove(&req_id)
-                                {
-                                    if let Err(err) = sender.send(ok.map(|_| data)) {
-                                        log::error!("send data with error: {err:?}");
-                                    }
-                                } else {
-                                    debug_assert!(!queries_sender.contains_key(&req_id));
-                                    log::warn!("req_id {req_id} not detected, message might be lost");
-                                }
+                            WsRecvData::Query(query) => {
+                                let release = if ok.is_ok() && !query.is_update && query.id != 0 {
+                                    live_results.insert(query.id, ());
+                                    Some(ResultLease { args: WsResArgs { req_id, id: query.id },
+                                        live: live_results.clone(), sender: ws2.clone(),
+                                        closed: connection_closed.clone(), close_signal: close_signal.clone() })
+                                } else { None };
+                                let reply = ok.map(|_| QueryReply { data: Some(data), release });
+                                if let Some((_, sender)) = queries_sender.remove(&req_id) {
+                                    // On failure the returned QueryReply drops its result lease.
+                                    let _ = sender.send(reply);
+                                } // Missing request: reply drops its result lease here.
                             }
                             WsRecvData::Fetch(fetch) => {
                                 let id = fetch.id;
-                                if fetch.completed {
-                                    ws2.send(
-                                        WsSend::FreeResult(WsResArgs {
-                                            req_id,
-                                            id,
-                                        })
-                                        .to_msg(),
-                                    )
-                                    .await
-                                    .unwrap();
+                                if fetch.completed && ok.is_ok() {
+                                    ResultLease { args: WsResArgs { req_id, id }, live: live_results.clone(),
+                                        sender: ws2.clone(), closed: connection_closed.clone(),
+                                        close_signal: close_signal.clone() }.release();
                                 }
                                 // dbg!(&queries_sender);
                                 if let Some((_, sender)) = queries_sender.remove(&req_id)
                                 {
-                                    let _ = sender.send(ok.map(|_| data));
+                                    let _ = sender.send(ok.map(|_| QueryReply::plain(data)));
                                 } else {
                                     log::warn!("req_id {req_id} not detected, message might be lost");
                                 }
@@ -504,7 +608,7 @@ async fn read_queries(
                                 assert!(ok.is_err());
                                 if let Some((_, sender)) = queries_sender.remove(&req_id)
                                 {
-                                    let _ = sender.send(ok.map(|_| data));
+                                    let _ = sender.send(ok.map(|_| QueryReply::plain(data)));
                                 } else {
                                     log::warn!("req_id {req_id} not detected, message might be lost");
                                 }
@@ -512,7 +616,7 @@ async fn read_queries(
                             WsRecvData::WriteMeta => {
                                 if let Some((_, sender)) = queries_sender.remove(&req_id)
                                 {
-                                    let _ = sender.send(ok.map(|_| data));
+                                    let _ = sender.send(ok.map(|_| QueryReply::plain(data)));
                                 } else {
                                     log::warn!("req_id {req_id} not detected, message might be lost");
                                 }
@@ -520,7 +624,7 @@ async fn read_queries(
                             WsRecvData::WriteRaw => {
                                 if let Some((_, sender)) = queries_sender.remove(&req_id)
                                 {
-                                    let _ = sender.send(ok.map(|_| data));
+                                    let _ = sender.send(ok.map(|_| QueryReply::plain(data)));
                                 } else {
                                     log::warn!("req_id {req_id} not detected, message might be lost");
                                 }
@@ -528,7 +632,7 @@ async fn read_queries(
                             WsRecvData::WriteRawBlock | WsRecvData::WriteRawBlockWithFields => {
                                 if let Some((_, sender)) = queries_sender.remove(&req_id)
                                 {
-                                    let _ = sender.send(ok.map(|_| data));
+                                    let _ = sender.send(ok.map(|_| QueryReply::plain(data)));
                                 } else {
                                     log::warn!("req_id {req_id} not detected, message might be lost");
                                 }
@@ -565,7 +669,7 @@ async fn read_queries(
                             let block_req_id = slice.read_u64().unwrap();
                             let block_code = slice.read_u32().unwrap();
                             let block_message = slice.read_inlined_str::<4>().unwrap();
-                            let _result_id = slice.read_u64().unwrap();
+                            let result_id = slice.read_u64().unwrap();
                             let finished = slice.read_u8().unwrap() == 1;
                             let result_block : Vec<u8>;
                             if finished {
@@ -574,8 +678,12 @@ async fn read_queries(
                                 result_block = slice.read_inlined_bytes::<4>().unwrap();
                             }
 
+                            if finished && block_code == 0 {
+                                // The binary fetch protocol frees a finished result in taosAdapter.
+                                live_results.remove(&result_id);
+                            }
                             if let Some((_, sender)) = queries_sender.remove(&block_req_id) {
-                                if sender.send(Ok(WsRecvData::BlockNew {
+                                if sender.send(Ok(QueryReply::plain(WsRecvData::BlockNew {
                                     block_version,
                                     timing,
                                     block_req_id,
@@ -583,7 +691,7 @@ async fn read_queries(
                                     block_message,
                                     finished,
                                     raw: result_block.to_vec(),
-                                })).is_err() {
+                                }))).is_err() {
                                     log::debug!("req_id {block_req_id}: requester gave up, discarding late BlockNew response");
                                 }
                             } else {
@@ -598,7 +706,7 @@ async fn read_queries(
                                 // v3
                                 if let Some((_, sender)) = queries_sender.remove(&req_id) {
                                     log::trace!("send data to fetches with id {}", res_id);
-                                    if sender.send(Ok(WsRecvData::Block { timing, raw: block[offset..].to_vec() })).is_err() {
+                                    if sender.send(Ok(QueryReply::plain(WsRecvData::Block { timing, raw: block[offset..].to_vec() }))).is_err() {
                                         log::debug!("req_id {req_id} res_id {res_id}: requester gave up, discarding late block response");
                                     }
                                 } else {
@@ -608,7 +716,7 @@ async fn read_queries(
                                 // v2
                                 if let Some((_, sender)) = queries_sender.remove(&req_id) {
                                     log::trace!("send data to fetches with id {}", res_id);
-                                    if sender.send(Ok(WsRecvData::BlockV2 { timing, raw: block[offset..].to_vec() })).is_err() {
+                                    if sender.send(Ok(QueryReply::plain(WsRecvData::BlockV2 { timing, raw: block[offset..].to_vec() }))).is_err() {
                                         log::debug!("req_id {req_id} res_id {res_id}: requester gave up, discarding late block response");
                                     }
                                 } else {
@@ -663,6 +771,8 @@ async fn read_queries(
             }
         }
     }
+    fetches_sender.clear();
+    live_results.clear();
     if queries_sender.is_empty() {
         return;
     }
@@ -876,6 +986,7 @@ impl WsTaos {
 
         let fetches_sender = Arc::new(QueryResMapper::new());
         let results = fetches_sender.clone();
+        let live_results = Arc::new(HashMap::new());
 
         let queries2_cloned = queries2.clone();
         let queries3 = queries2.clone();
@@ -933,7 +1044,7 @@ impl WsTaos {
         let ws_cloned: tokio::sync::mpsc::Sender<WsMessage<bytes::Bytes>> = ws.clone();
 
         Ok(Self {
-            close_signal: tx,
+            close_signal: tx.clone(),
             sender: WsQuerySender {
                 version: Version {
                     version: version,
@@ -944,6 +1055,8 @@ impl WsTaos {
                 queries: queries2_cloned,
                 results,
                 connection_closed,
+                live_results,
+                close_signal: tx.clone(),
             },
         })
     }
@@ -1021,6 +1134,7 @@ impl WsTaos {
 
         let fetches_sender = Arc::new(QueryResMapper::new());
         let results = fetches_sender.clone();
+        let live_results = Arc::new(HashMap::new());
 
         let queries2_cloned = queries2.clone();
         let queries3 = queries2.clone();
@@ -1034,6 +1148,7 @@ impl WsTaos {
         // Connection watcher
         let (tx, mut rx) = watch::channel(false);
         let close_listener = rx.clone();
+        let writer_close_signal = tx.clone();
 
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_millis(10));
@@ -1046,11 +1161,19 @@ impl WsTaos {
                     }
                     Some(msg) = msg_recv.recv() => {
                         // dbg!(&msg);
+                        if writer_connection_closed.load(Ordering::SeqCst) { break 'ws; }
                         let opcode = msg.code;
                         let msg = msg.data;
-                        if let Err(err) = sender.send(opcode, &msg).await {
-                            log::error!("Write websocket error: {}", err);
+                        let sent = tokio::select! {
+                            result = sender.send(opcode, &msg) => result,
+                            _ = rx.changed() => {
                                 writer_connection_closed.store(true, Ordering::SeqCst);
+                                break 'ws;
+                            }
+                        };
+                        if let Err(err) = sent {
+                            log::error!("Write websocket error: {}", err);
+                                mark_connection_closed(&writer_connection_closed, &writer_close_signal);
                                 let mut keys = Vec::new();
                                 queries3.iter().for_each(|r| keys.push(*r.key()));
 
@@ -1073,11 +1196,13 @@ impl WsTaos {
         });
 
         let reader_close_signal = tx.clone();
+        let reader_live_results = live_results.clone();
         tokio::spawn(async move {
             read_queries(
                 reader,
                 queries2,
                 fetches_sender,
+                reader_live_results,
                 ws2,
                 is_v3,
                 reader_close_signal,
@@ -1089,7 +1214,7 @@ impl WsTaos {
         let ws_cloned = ws.clone();
 
         Ok(Self {
-            close_signal: tx,
+            close_signal: tx.clone(),
             sender: WsQuerySender {
                 version: Version {
                     version: version,
@@ -1100,6 +1225,8 @@ impl WsTaos {
                 queries: queries2_cloned,
                 results,
                 connection_closed,
+                live_results,
+                close_signal: tx.clone(),
             },
         })
     }
@@ -1333,6 +1460,14 @@ impl WsTaos {
             WsRecvData::Query(query) => Ok(query.affected_rows),
             _ => unreachable!(),
         }
+    }
+
+    pub(crate) fn close(&self) {
+        mark_connection_closed(&self.sender.connection_closed, &self.close_signal);
+        fail_all_queries_with_connection_closed(
+            &self.sender.queries,
+            "query connection retired by caller",
+        );
     }
 
     pub fn version(&self) -> &str {
@@ -1576,6 +1711,416 @@ mod tests {
 
     use super::*;
 
+    fn lifecycle_sender() -> (
+        WsQuerySender,
+        tokio::sync::mpsc::Receiver<WsMessage<bytes::Bytes>>,
+    ) {
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        (
+            WsQuerySender {
+                version: Version {
+                    version: "3.3.5.8".into(),
+                    is_support_binary_sql: true,
+                },
+                req_id: Default::default(),
+                results: Arc::new(HashMap::new()),
+                sender: tx,
+                queries: Arc::new(HashMap::new()),
+                connection_closed: Arc::new(AtomicBool::new(false)),
+                live_results: Arc::new(HashMap::new()),
+                close_signal: watch::channel(false).0,
+            },
+            rx,
+        )
+    }
+
+    // The cached fetch future outlives ResultSet.sender during field teardown.
+    // Its cancellation guard must therefore own both maps independently.
+    async fn cached_fetch_keeps_cleanup_maps_alive(binary: bool) {
+        let (mut sender, mut outbound) = lifecycle_sender();
+        sender.version.is_support_binary_sql = binary;
+        let queries = Arc::downgrade(&sender.queries);
+        let results = Arc::downgrade(&sender.results);
+        sender.live_results.insert(9, ());
+        let mut rows = Box::new(ResultSet {
+            sender,
+            args: WsResArgs { req_id: 90, id: 9 },
+            fields: None,
+            fields_count: 0,
+            affected_rows: 0,
+            precision: Precision::Millisecond,
+            summary: (0, 0),
+            timing: Duration::ZERO,
+            block_future: None,
+            closer: None,
+            completed: false,
+        });
+        {
+            let mut cx = std::task::Context::from_waker(futures::task::noop_waker_ref());
+            assert!(rows.fetch_raw_block(&mut cx).is_pending());
+            outbound.try_recv().unwrap();
+            if !binary {
+                // Advance past legacy Fetch into FetchBlock, which also owns a
+                // result -> request mapping while waiting for the binary block.
+                let (_, reply) = rows.sender.queries.remove(&0).unwrap();
+                reply
+                    .send(Ok(QueryReply::plain(WsRecvData::Fetch(
+                        WsFetchResp::default(),
+                    ))))
+                    .unwrap();
+                assert!(rows.fetch_raw_block(&mut cx).is_pending());
+                outbound.try_recv().unwrap();
+                assert_eq!(rows.sender.results.get(&9).map(|v| *v), Some(1));
+            }
+        }
+        assert_eq!(rows.sender.queries.len(), 1);
+        let owns_maps = queries.strong_count() == 2 && results.strong_count() == 2;
+        if !owns_maps {
+            // Fail safely on the old borrowed guard: cancel while sender is
+            // still alive, rather than deliberately executing a dangling Drop.
+            drop(rows.block_future.take());
+        }
+        assert!(
+            owns_maps,
+            "cached fetch cancellation must retain its cleanup maps"
+        );
+        // No connection, reader, writer, or external sender clone owns a map.
+        // Exercise the actual ResultSet field teardown with its cached future.
+        drop(rows);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while queries.strong_count() != 0 || results.strong_count() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cached fetch and background cleanup must release their maps");
+        let free = outbound.recv().await.unwrap();
+        assert!(String::from_utf8_lossy(&free.data).contains("free_result"));
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cached_binary_fetch_owns_cleanup_maps() {
+        cached_fetch_keeps_cleanup_maps_alive(true).await;
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cached_legacy_fetch_owns_cleanup_maps() {
+        cached_fetch_keeps_cleanup_maps_alive(false).await;
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cancel_before_poll_does_not_send() {
+        let (sender, mut outbound) = lifecycle_sender();
+        drop(sender.send_recv(WsSend::Query {
+            req_id: 41,
+            sql: "select 1".into(),
+        }));
+        assert!(sender.queries.is_empty());
+        assert!(outbound.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cancel_cleans_pending_request() {
+        let (sender, mut rx) = lifecycle_sender();
+        let worker = sender.clone();
+        let task = tokio::spawn(async move {
+            worker
+                .send_recv(WsSend::Query {
+                    req_id: 41,
+                    sql: "select 1".into(),
+                })
+                .await
+        });
+        rx.recv().await.unwrap();
+        assert_eq!(sender.queries.len(), 1);
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(sender.queries.is_empty());
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cancel_cleans_legacy_fetch_mapping() {
+        let (sender, mut rx) = lifecycle_sender();
+        let worker = sender.clone();
+        let task = tokio::spawn(async move {
+            worker
+                .send_recv(WsSend::FetchBlock(WsResArgs { req_id: 42, id: 9 }))
+                .await
+        });
+        rx.recv().await.unwrap();
+        assert_eq!(sender.results.len(), 1);
+        task.abort();
+        let _ = task.await;
+        assert!(sender.queries.is_empty());
+        assert!(sender.results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn lifecycle_retire_fails_pending_requests() {
+        let (sender, mut rx) = lifecycle_sender();
+        let mut closed = sender.close_signal.subscribe();
+        let client = WsTaos {
+            close_signal: sender.close_signal.clone(),
+            sender: sender.clone(),
+        };
+        let worker = sender.clone();
+        let task = tokio::spawn(async move {
+            worker
+                .send_recv(WsSend::Query {
+                    req_id: 45,
+                    sql: "select 1".into(),
+                })
+                .await
+        });
+        rx.recv().await.unwrap();
+        client.close();
+        closed.changed().await.unwrap();
+        assert!(*closed.borrow());
+        assert_eq!(
+            task.await.unwrap().unwrap_err().code(),
+            WS_ERROR_NO::CONN_CLOSED.as_code()
+        );
+        assert!(sender.queries.is_empty());
+        assert!(sender.ensure_open().is_err());
+    }
+
+    #[tokio::test]
+    async fn lifecycle_send_failure_cleans_pending_request() {
+        let (sender, rx) = lifecycle_sender();
+        drop(rx);
+        assert!(sender
+            .send_recv(WsSend::FetchBlock(WsResArgs { req_id: 43, id: 9 }))
+            .await
+            .is_err());
+        assert!(sender.queries.is_empty());
+        assert!(sender.results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn lifecycle_enqueued_reply_cancel_frees_once() {
+        let (sender, mut outbound) = lifecycle_sender();
+        let lease = ResultLease {
+            args: WsResArgs { req_id: 44, id: 10 },
+            live: sender.live_results.clone(),
+            sender: sender.sender.clone(),
+            closed: sender.connection_closed.clone(),
+            close_signal: sender.close_signal.clone(),
+        };
+        sender.live_results.insert(10, ());
+        let (tx, rx) = query_channel::<RawResult<QueryReply>>();
+        tx.send(Ok(QueryReply {
+            data: Some(WsRecvData::Query(WsQueryResp {
+                id: 10,
+                ..Default::default()
+            })),
+            release: Some(lease.clone()),
+        }))
+        .unwrap();
+        // Receiver disappears after oneshot send succeeded, before it polls.
+        drop(rx);
+        // A racing legacy fetch completion must not free a second time.
+        lease.release();
+        let free = outbound.recv().await.unwrap();
+        assert!(String::from_utf8_lossy(&free.data).contains("free_result"));
+        assert!(sender.live_results.is_empty());
+        assert!(outbound.try_recv().is_err());
+    }
+
+    // Real local WebSocket transport with controlled replies; no TDengine or
+    // remote SQL cancellation is claimed by these protocol regression tests.
+    async fn lifecycle_wire() -> (
+        WsTaos,
+        tokio::sync::mpsc::Receiver<Message>,
+        tokio::sync::mpsc::Sender<Message>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (requests, received) = tokio::sync::mpsc::channel(8);
+        let (replies, mut responses) = tokio::sync::mpsc::channel(8);
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            loop {
+                tokio::select! {
+                    response = responses.recv() => {
+                        let Some(response) = response else { break };
+                        socket.send(response).await.unwrap();
+                    }
+                    request = socket.next() => {
+                        match request {
+                            Some(Ok(Message::Text(text))) if text.contains("\"version\"") => {
+                                socket.send(Message::Text(version_response("3.3.7.5"))).await.unwrap();
+                            }
+                            Some(Ok(Message::Text(text))) if text.contains("\"conn\"") => {
+                                socket.send(Message::Text(CONN_OK.into())).await.unwrap();
+                            }
+                            Some(Ok(Message::Ping(data))) => {
+                                socket.send(Message::Pong(data)).await.unwrap();
+                            }
+                            Some(Ok(Message::Close(_))) | None => break,
+                            Some(Ok(request)) => requests.send(request).await.unwrap(),
+                            Some(Err(error)) => panic!("local websocket failed: {error}"),
+                        }
+                    }
+                }
+            }
+        });
+        let client = WsTaos::from_dsn(format!("ws://{addr}")).await.unwrap();
+        (client, received, replies, server)
+    }
+
+    async fn lifecycle_wire_recv(requests: &mut tokio::sync::mpsc::Receiver<Message>) -> Message {
+        tokio::time::timeout(Duration::from_secs(2), requests.recv())
+            .await
+            .expect("wire request deadline")
+            .expect("wire connection remains open")
+    }
+
+    fn lifecycle_wire_req_id(request: &Message) -> u64 {
+        match request {
+            Message::Binary(bytes) => u64::from_le_bytes(bytes[..8].try_into().unwrap()),
+            Message::Text(text) => serde_json::from_str::<serde_json::Value>(text).unwrap()["args"]
+                ["req_id"]
+                .as_u64()
+                .unwrap(),
+            other => panic!("unexpected wire request: {other:?}"),
+        }
+    }
+
+    fn lifecycle_wire_reply(req_id: u64, id: u64) -> Message {
+        Message::Text(
+            serde_json::json!({
+                "code": 0, "message": "", "action": "query", "req_id": req_id, "id": id,
+                "fields_count": 1, "fields_names": ["v"], "fields_types": [4],
+                "fields_lengths": [4], "precision": "ms"
+            })
+            .to_string(),
+        )
+    }
+
+    #[tokio::test]
+    async fn lifecycle_wire_late_query_normal_result_and_error() {
+        let (client, mut requests, replies, server) = lifecycle_wire().await;
+        let mut query = Box::pin(client.s_query("select late"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        drop(query);
+        assert!(client.sender.queries.is_empty());
+        replies
+            .send(lifecycle_wire_reply(lifecycle_wire_req_id(&request), 9))
+            .await
+            .unwrap();
+        let free = lifecycle_wire_recv(&mut requests).await;
+        let free: serde_json::Value = serde_json::from_str(free.to_text().unwrap()).unwrap();
+        assert_eq!(free["action"], "free_result");
+        assert_eq!(free["args"]["id"], 9);
+
+        let mut query = Box::pin(client.s_query("select normal"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        let req_id = lifecycle_wire_req_id(&request);
+        assert_eq!(&request.into_data()[30..], b"select normal");
+        replies
+            .send(lifecycle_wire_reply(req_id, 10))
+            .await
+            .unwrap();
+        let rows = query.await.unwrap();
+        assert_eq!(AsyncFetchable::fields(&rows)[0].name(), "v");
+        drop(rows);
+        let free = lifecycle_wire_recv(&mut requests).await;
+        let free: serde_json::Value = serde_json::from_str(free.to_text().unwrap()).unwrap();
+        assert_eq!(free["action"], "free_result");
+        assert_eq!(free["args"]["id"], 10);
+
+        let mut query = Box::pin(client.s_exec("invalid SQL"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        let req_id = lifecycle_wire_req_id(&request);
+        replies.send(Message::Text(serde_json::json!({
+            "code": 0x2600, "message": "fixture SQL error", "action": "query", "req_id": req_id
+        }).to_string())).await.unwrap();
+        let error = query.await.unwrap_err();
+        assert_eq!(error.code(), Code::new(0x2600));
+        assert!(error.message().contains("fixture SQL error"));
+        assert!(client.sender.live_results.is_empty());
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn lifecycle_wire_cached_fetch_timeout_then_connection_teardown() {
+        let (client, mut requests, replies, server) = lifecycle_wire().await;
+        let mut query = Box::pin(client.s_query("select pending fetch"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        replies
+            .send(lifecycle_wire_reply(lifecycle_wire_req_id(&request), 9))
+            .await
+            .unwrap();
+        let mut rows = Box::new(query.await.unwrap());
+        let queries = Arc::downgrade(&rows.sender.queries);
+        let results = Arc::downgrade(&rows.sender.results);
+        assert!(tokio::time::timeout(
+            Duration::from_millis(10),
+            futures::future::poll_fn(|cx| rows.fetch_raw_block(cx))
+        )
+        .await
+        .is_err());
+        assert!(rows.block_future.is_some());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        assert_eq!(
+            u64::from_le_bytes(request.into_data()[16..24].try_into().unwrap()),
+            7
+        );
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while queries.strong_count() != 2 || results.strong_count() != 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("reader/writer must exit, leaving only rows and its guard");
+
+        // A fresh generation may reuse the result id; old cleanup must stay
+        // on its original connection and must not release this new result.
+        let (fresh, mut fresh_requests, fresh_replies, fresh_server) = lifecycle_wire().await;
+        let mut query = Box::pin(fresh.s_query("select fresh"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut fresh_requests).await;
+        fresh_replies
+            .send(lifecycle_wire_reply(lifecycle_wire_req_id(&request), 9))
+            .await
+            .unwrap();
+        let fresh_rows = query.await.unwrap();
+        drop(rows);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while queries.strong_count() != 0 || results.strong_count() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("last cached fetch guard must finish cleanup after connection exit");
+        assert!(fresh.sender.live_results.contains_key(&9));
+        drop(fresh_rows);
+        let free = lifecycle_wire_recv(&mut fresh_requests).await;
+        let free: serde_json::Value = serde_json::from_str(free.to_text().unwrap()).unwrap();
+        assert_eq!(free["action"], "free_result");
+        assert_eq!(free["args"]["id"], 9);
+        drop(fresh);
+        tokio::time::timeout(Duration::from_secs(2), fresh_server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
     fn block_new_frame(req_id: u64) -> Vec<u8> {
         let mut f = Vec::new();
         f.extend_from_slice(&u64::MAX.to_le_bytes()); // marks BlockNew
@@ -1729,14 +2274,23 @@ mod tests {
             let mut server = tokio_tungstenite::accept_async(stream).await.unwrap();
             // Wait until the requester of req_id 1 has given up.
             go_rx.await.unwrap();
-            server.send(Message::Binary(block_new_frame(1))).await.unwrap();
-            server.send(Message::Binary(block_new_frame(2))).await.unwrap();
+            server
+                .send(Message::Binary(block_new_frame(1)))
+                .await
+                .unwrap();
+            server
+                .send(Message::Binary(block_new_frame(2)))
+                .await
+                .unwrap();
             // keep the connection open until the client goes away
             while server.next().await.is_some() {}
         });
 
         let codec = crate::ClientConfig::default()
-            .async_connect_with(format!("ws://{addr}"), ws_tool::codec::AsyncDeflateCodec::check_fn)
+            .async_connect_with(
+                format!("ws://{addr}"),
+                ws_tool::codec::AsyncDeflateCodec::check_fn,
+            )
             .await
             .unwrap();
         let (reader, _writer) = codec.split();
@@ -1757,6 +2311,7 @@ mod tests {
             reader,
             queries.clone(),
             fetches,
+            Arc::new(HashMap::new()),
             ws2,
             true,
             close_tx,
@@ -1770,8 +2325,17 @@ mod tests {
             .expect("reader loop must keep processing after a dropped receiver")
             .expect("sender must not be dropped")
             .expect("response must be Ok");
-        assert!(matches!(received, WsRecvData::BlockNew { block_req_id: 2, .. }));
-        assert!(!reader_task.is_finished(), "reader loop must still be running");
+        assert!(matches!(
+            received.into_data(),
+            WsRecvData::BlockNew {
+                block_req_id: 2,
+                ..
+            }
+        ));
+        assert!(
+            !reader_task.is_finished(),
+            "reader loop must still be running"
+        );
     }
 
     #[tokio::test]
@@ -1846,6 +2410,8 @@ mod tests {
             sender: ws,
             queries: queries.clone(),
             connection_closed: connection_closed.clone(),
+            live_results: Arc::new(HashMap::new()),
+            close_signal: watch::channel(false).0,
         };
 
         let first_sender = sender.clone();
