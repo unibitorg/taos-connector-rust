@@ -205,19 +205,20 @@ struct WsQuerySender {
     close_signal: watch::Sender<bool>,
 }
 
-struct PendingRequest<'a> {
-    sender: &'a WsQuerySender,
+struct PendingRequest {
+    // ResultSet caches a self-borrowing fetch future and drops sender first.
+    // Cancellation must not borrow that field during future destruction.
+    queries: QueryAgent,
+    results: Arc<QueryResMapper>,
     req_id: ReqId,
     legacy_result: Option<ResId>,
 }
 
-impl Drop for PendingRequest<'_> {
+impl Drop for PendingRequest {
     fn drop(&mut self) {
-        self.sender.queries.remove(&self.req_id);
+        self.queries.remove(&self.req_id);
         if let Some(id) = self.legacy_result {
-            self.sender
-                .results
-                .remove_if(&id, |_, req| *req == self.req_id);
+            self.results.remove_if(&id, |_, req| *req == self.req_id);
         }
     }
 }
@@ -245,7 +246,8 @@ impl WsQuerySender {
         self.ensure_open()?;
         self.queries.insert(req_id, tx);
         let mut pending = PendingRequest {
-            sender: self,
+            queries: self.queries.clone(),
+            results: self.results.clone(),
             req_id,
             legacy_result: None,
         };
@@ -1732,6 +1734,91 @@ mod tests {
         )
     }
 
+    // The cached fetch future outlives ResultSet.sender during field teardown.
+    // Its cancellation guard must therefore own both maps independently.
+    async fn cached_fetch_keeps_cleanup_maps_alive(binary: bool) {
+        let (mut sender, mut outbound) = lifecycle_sender();
+        sender.version.is_support_binary_sql = binary;
+        let queries = Arc::downgrade(&sender.queries);
+        let results = Arc::downgrade(&sender.results);
+        sender.live_results.insert(9, ());
+        let mut rows = Box::new(ResultSet {
+            sender,
+            args: WsResArgs { req_id: 90, id: 9 },
+            fields: None,
+            fields_count: 0,
+            affected_rows: 0,
+            precision: Precision::Millisecond,
+            summary: (0, 0),
+            timing: Duration::ZERO,
+            block_future: None,
+            closer: None,
+            completed: false,
+        });
+        {
+            let mut cx = std::task::Context::from_waker(futures::task::noop_waker_ref());
+            assert!(rows.fetch_raw_block(&mut cx).is_pending());
+            outbound.try_recv().unwrap();
+            if !binary {
+                // Advance past legacy Fetch into FetchBlock, which also owns a
+                // result -> request mapping while waiting for the binary block.
+                let (_, reply) = rows.sender.queries.remove(&0).unwrap();
+                reply
+                    .send(Ok(QueryReply::plain(WsRecvData::Fetch(
+                        WsFetchResp::default(),
+                    ))))
+                    .unwrap();
+                assert!(rows.fetch_raw_block(&mut cx).is_pending());
+                outbound.try_recv().unwrap();
+                assert_eq!(rows.sender.results.get(&9).map(|v| *v), Some(1));
+            }
+        }
+        assert_eq!(rows.sender.queries.len(), 1);
+        let owns_maps = queries.strong_count() == 2 && results.strong_count() == 2;
+        if !owns_maps {
+            // Fail safely on the old borrowed guard: cancel while sender is
+            // still alive, rather than deliberately executing a dangling Drop.
+            drop(rows.block_future.take());
+        }
+        assert!(
+            owns_maps,
+            "cached fetch cancellation must retain its cleanup maps"
+        );
+        // No connection, reader, writer, or external sender clone owns a map.
+        // Exercise the actual ResultSet field teardown with its cached future.
+        drop(rows);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while queries.strong_count() != 0 || results.strong_count() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cached fetch and background cleanup must release their maps");
+        let free = outbound.recv().await.unwrap();
+        assert!(String::from_utf8_lossy(&free.data).contains("free_result"));
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cached_binary_fetch_owns_cleanup_maps() {
+        cached_fetch_keeps_cleanup_maps_alive(true).await;
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cached_legacy_fetch_owns_cleanup_maps() {
+        cached_fetch_keeps_cleanup_maps_alive(false).await;
+    }
+
+    #[tokio::test]
+    async fn lifecycle_cancel_before_poll_does_not_send() {
+        let (sender, mut outbound) = lifecycle_sender();
+        drop(sender.send_recv(WsSend::Query {
+            req_id: 41,
+            sql: "select 1".into(),
+        }));
+        assert!(sender.queries.is_empty());
+        assert!(outbound.try_recv().is_err());
+    }
+
     #[tokio::test]
     async fn lifecycle_cancel_cleans_pending_request() {
         let (sender, mut rx) = lifecycle_sender();
@@ -1837,6 +1924,201 @@ mod tests {
         assert!(String::from_utf8_lossy(&free.data).contains("free_result"));
         assert!(sender.live_results.is_empty());
         assert!(outbound.try_recv().is_err());
+    }
+
+    // Real local WebSocket transport with controlled replies; no TDengine or
+    // remote SQL cancellation is claimed by these protocol regression tests.
+    async fn lifecycle_wire() -> (
+        WsTaos,
+        tokio::sync::mpsc::Receiver<Message>,
+        tokio::sync::mpsc::Sender<Message>,
+        tokio::task::JoinHandle<()>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (requests, received) = tokio::sync::mpsc::channel(8);
+        let (replies, mut responses) = tokio::sync::mpsc::channel(8);
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            loop {
+                tokio::select! {
+                    response = responses.recv() => {
+                        let Some(response) = response else { break };
+                        socket.send(response).await.unwrap();
+                    }
+                    request = socket.next() => {
+                        match request {
+                            Some(Ok(Message::Text(text))) if text.contains("\"version\"") => {
+                                socket.send(Message::Text(version_response("3.3.7.5"))).await.unwrap();
+                            }
+                            Some(Ok(Message::Text(text))) if text.contains("\"conn\"") => {
+                                socket.send(Message::Text(CONN_OK.into())).await.unwrap();
+                            }
+                            Some(Ok(Message::Ping(data))) => {
+                                socket.send(Message::Pong(data)).await.unwrap();
+                            }
+                            Some(Ok(Message::Close(_))) | None => break,
+                            Some(Ok(request)) => requests.send(request).await.unwrap(),
+                            Some(Err(error)) => panic!("local websocket failed: {error}"),
+                        }
+                    }
+                }
+            }
+        });
+        let client = WsTaos::from_dsn(format!("ws://{addr}")).await.unwrap();
+        (client, received, replies, server)
+    }
+
+    async fn lifecycle_wire_recv(requests: &mut tokio::sync::mpsc::Receiver<Message>) -> Message {
+        tokio::time::timeout(Duration::from_secs(2), requests.recv())
+            .await
+            .expect("wire request deadline")
+            .expect("wire connection remains open")
+    }
+
+    fn lifecycle_wire_req_id(request: &Message) -> u64 {
+        match request {
+            Message::Binary(bytes) => u64::from_le_bytes(bytes[..8].try_into().unwrap()),
+            Message::Text(text) => serde_json::from_str::<serde_json::Value>(text).unwrap()["args"]
+                ["req_id"]
+                .as_u64()
+                .unwrap(),
+            other => panic!("unexpected wire request: {other:?}"),
+        }
+    }
+
+    fn lifecycle_wire_reply(req_id: u64, id: u64) -> Message {
+        Message::Text(
+            serde_json::json!({
+                "code": 0, "message": "", "action": "query", "req_id": req_id, "id": id,
+                "fields_count": 1, "fields_names": ["v"], "fields_types": [4],
+                "fields_lengths": [4], "precision": "ms"
+            })
+            .to_string(),
+        )
+    }
+
+    #[tokio::test]
+    async fn lifecycle_wire_late_query_normal_result_and_error() {
+        let (client, mut requests, replies, server) = lifecycle_wire().await;
+        let mut query = Box::pin(client.s_query("select late"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        drop(query);
+        assert!(client.sender.queries.is_empty());
+        replies
+            .send(lifecycle_wire_reply(lifecycle_wire_req_id(&request), 9))
+            .await
+            .unwrap();
+        let free = lifecycle_wire_recv(&mut requests).await;
+        let free: serde_json::Value = serde_json::from_str(free.to_text().unwrap()).unwrap();
+        assert_eq!(free["action"], "free_result");
+        assert_eq!(free["args"]["id"], 9);
+
+        let mut query = Box::pin(client.s_query("select normal"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        let req_id = lifecycle_wire_req_id(&request);
+        assert_eq!(&request.into_data()[30..], b"select normal");
+        replies
+            .send(lifecycle_wire_reply(req_id, 10))
+            .await
+            .unwrap();
+        let rows = query.await.unwrap();
+        assert_eq!(AsyncFetchable::fields(&rows)[0].name(), "v");
+        drop(rows);
+        let free = lifecycle_wire_recv(&mut requests).await;
+        let free: serde_json::Value = serde_json::from_str(free.to_text().unwrap()).unwrap();
+        assert_eq!(free["action"], "free_result");
+        assert_eq!(free["args"]["id"], 10);
+
+        let mut query = Box::pin(client.s_exec("invalid SQL"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        let req_id = lifecycle_wire_req_id(&request);
+        replies.send(Message::Text(serde_json::json!({
+            "code": 0x2600, "message": "fixture SQL error", "action": "query", "req_id": req_id
+        }).to_string())).await.unwrap();
+        let error = query.await.unwrap_err();
+        assert_eq!(error.code(), Code::new(0x2600));
+        assert!(error.message().contains("fixture SQL error"));
+        assert!(client.sender.live_results.is_empty());
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn lifecycle_wire_cached_fetch_timeout_then_connection_teardown() {
+        let (client, mut requests, replies, server) = lifecycle_wire().await;
+        let mut query = Box::pin(client.s_query("select pending fetch"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        replies
+            .send(lifecycle_wire_reply(lifecycle_wire_req_id(&request), 9))
+            .await
+            .unwrap();
+        let mut rows = Box::new(query.await.unwrap());
+        let queries = Arc::downgrade(&rows.sender.queries);
+        let results = Arc::downgrade(&rows.sender.results);
+        assert!(tokio::time::timeout(
+            Duration::from_millis(10),
+            futures::future::poll_fn(|cx| rows.fetch_raw_block(cx))
+        )
+        .await
+        .is_err());
+        assert!(rows.block_future.is_some());
+        let request = lifecycle_wire_recv(&mut requests).await;
+        assert_eq!(
+            u64::from_le_bytes(request.into_data()[16..24].try_into().unwrap()),
+            7
+        );
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), server)
+            .await
+            .unwrap()
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while queries.strong_count() != 2 || results.strong_count() != 2 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("reader/writer must exit, leaving only rows and its guard");
+
+        // A fresh generation may reuse the result id; old cleanup must stay
+        // on its original connection and must not release this new result.
+        let (fresh, mut fresh_requests, fresh_replies, fresh_server) = lifecycle_wire().await;
+        let mut query = Box::pin(fresh.s_query("select fresh"));
+        assert!(futures::poll!(&mut query).is_pending());
+        let request = lifecycle_wire_recv(&mut fresh_requests).await;
+        fresh_replies
+            .send(lifecycle_wire_reply(lifecycle_wire_req_id(&request), 9))
+            .await
+            .unwrap();
+        let fresh_rows = query.await.unwrap();
+        drop(rows);
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while queries.strong_count() != 0 || results.strong_count() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("last cached fetch guard must finish cleanup after connection exit");
+        assert!(fresh.sender.live_results.contains_key(&9));
+        drop(fresh_rows);
+        let free = lifecycle_wire_recv(&mut fresh_requests).await;
+        let free: serde_json::Value = serde_json::from_str(free.to_text().unwrap()).unwrap();
+        assert_eq!(free["action"], "free_result");
+        assert_eq!(free["args"]["id"], 9);
+        drop(fresh);
+        tokio::time::timeout(Duration::from_secs(2), fresh_server)
+            .await
+            .unwrap()
+            .unwrap();
     }
 
     fn block_new_frame(req_id: u64) -> Vec<u8> {
