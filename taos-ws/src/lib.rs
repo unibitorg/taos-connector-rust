@@ -34,6 +34,9 @@ use tokio_tungstenite::{connect_async_with_config, WebSocketStream};
 #[allow(unused_imports)]
 use ws_tool::codec::{AsyncDeflateCodec, WindowBit};
 
+#[cfg(test)]
+mod sql_socket_tests;
+
 pub mod client;
 pub use client::ClientConfig;
 
@@ -507,7 +510,16 @@ impl TaosBuilder {
         &self,
         url: String,
     ) -> RawResult<AsyncDeflateCodec<tokio::io::BufStream<ws_tool::stream::AsyncStream>>> {
-        let mut config = ClientConfig::default();
+        let mut config = ClientConfig {
+            // Configure the underlying TCP socket before either WS or TLS handshaking.
+            set_socket_fn: Box::new(|socket| socket.set_nodelay(true).map_err(Into::into)),
+            ..Default::default()
+        };
+        let check_fn = |key, response, stream| {
+            #[cfg(test)]
+            sql_socket_tests::observe_socket(&stream);
+            AsyncDeflateCodec::check_fn(key, response, stream)
+        };
 
         #[cfg(feature = "deflate")]
         {
@@ -534,7 +546,7 @@ impl TaosBuilder {
             AsyncDeflateCodec<tokio::io::BufStream<ws_tool::stream::AsyncStream>>,
             QueryError,
         > = config
-            .async_connect_with(self.to_ws_url(), AsyncDeflateCodec::check_fn)
+            .async_connect_with(self.to_ws_url(), check_fn)
             .await
             .map_err(|err| {
                 let err_string = err.to_string();
@@ -551,7 +563,7 @@ impl TaosBuilder {
                 let uri = url.clone();
                 if err.to_string().contains("404 Not Found") || err.to_string().contains("400") {
                     config
-                        .async_connect_with(uri, AsyncDeflateCodec::check_fn)
+                        .async_connect_with(uri, check_fn)
                         .await
                         .map_err(|err| {
                             let err_string = err.to_string();
