@@ -1,10 +1,11 @@
 # Replace REVISION with a reviewed release tag or full commit SHA before adoption.
 minimum_prek_version: '0.5.7'
 default_stages: [pre-commit]
-exclude: '(^|/)(\.evidence|\.dsh|test-evidence|\.qa-cache)/|^target/'
+# Append repository-specific paths to this expression; all file hooks inherit it.
+exclude: '(^|/)(\.evidence|\.dsh|test-evidence|\.qa-cache|vendor|third_party|testdata|test-fixtures|[^/]*_fixtures|fixtures|corpus|broadcast|data|generated)/|^target/|(^|/)contracts/lib/'
 repos:
   - repo: https://github.com/unibitorg/engineering-standards.git
-    rev: ccb11a83377e0c302f716afe683660b44e8ce11f
+    rev: 3b59637a08537eed59fb3bc679b7972e53088c8c
     hooks:
       - id: unstage-local-evidence
         priority: 0
