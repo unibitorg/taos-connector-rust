@@ -46,17 +46,19 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw(
     protocol: c_int,
     precision: c_int,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        len,
-        totalRows,
-        protocol,
-        precision,
-        0,
-        generate_req_id() as i64,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            len,
+            totalRows,
+            protocol,
+            precision,
+            0,
+            generate_req_id() as i64,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -70,17 +72,19 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_with_reqid(
     precision: c_int,
     reqid: i64,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        len,
-        totalRows,
-        protocol,
-        precision,
-        0,
-        reqid,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            len,
+            totalRows,
+            protocol,
+            precision,
+            0,
+            reqid,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -94,17 +98,19 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl(
     precision: c_int,
     ttl: i32,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        len,
-        totalRows,
-        protocol,
-        precision,
-        ttl,
-        generate_req_id() as i64,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            len,
+            totalRows,
+            protocol,
+            precision,
+            ttl,
+            generate_req_id() as i64,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -120,17 +126,19 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl_with_reqid(
     ttl: i32,
     reqid: i64,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        len,
-        totalRows,
-        protocol,
-        precision,
-        ttl,
-        reqid,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            len,
+            totalRows,
+            protocol,
+            precision,
+            ttl,
+            reqid,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -147,21 +155,23 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
     reqid: i64,
     tbnameKey: *mut c_char,
 ) -> *mut TAOS_RES {
-    debug!(
-        "taos_schemaless_insert_raw_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, len: {len}, total_rows: {totalRows:?}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}"
-    );
-    match sml_insert_raw(
-        taos, lines, len, totalRows, protocol, precision, ttl, reqid, tbnameKey,
-    ) {
-        Ok(rs) => {
-            debug!("taos_schemaless_insert_raw_ttl_with_reqid_tbname_key succ, rs: {rs:?}");
-            let res: TaosMaybeError<ResultSet> = rs.into();
-            Box::into_raw(Box::new(res)) as _
-        }
-        Err(err) => {
-            error!("taos_schemaless_insert_raw_ttl_with_reqid_tbname_key failed, err: {err:?}");
-            set_err_and_get_code(TaosError::new(err.code(), &err.to_string()));
-            ptr::null_mut()
+    unsafe {
+        debug!(
+            "taos_schemaless_insert_raw_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, len: {len}, total_rows: {totalRows:?}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}"
+        );
+        match sml_insert_raw(
+            taos, lines, len, totalRows, protocol, precision, ttl, reqid, tbnameKey,
+        ) {
+            Ok(rs) => {
+                debug!("taos_schemaless_insert_raw_ttl_with_reqid_tbname_key succ, rs: {rs:?}");
+                let res: TaosMaybeError<ResultSet> = rs.into();
+                Box::into_raw(Box::new(res)) as _
+            }
+            Err(err) => {
+                error!("taos_schemaless_insert_raw_ttl_with_reqid_tbname_key failed, err: {err:?}");
+                set_err_and_get_code(TaosError::new(err.code(), &err.to_string()));
+                ptr::null_mut()
+            }
         }
     }
 }
@@ -179,60 +189,62 @@ unsafe fn sml_insert_raw(
     reqid: i64,
     tbnameKey: *mut c_char,
 ) -> TaosResult<ResultSet> {
-    let taos = (taos as *mut Taos)
-        .as_mut()
-        .ok_or(TaosError::new(Code::INVALID_PARA, "taos is null"))?;
+    unsafe {
+        let taos = (taos as *mut Taos)
+            .as_mut()
+            .ok_or(TaosError::new(Code::INVALID_PARA, "taos is null"))?;
 
-    if lines.is_null() {
-        return Err(TaosError::new(Code::INVALID_PARA, "lines is null"));
+        if lines.is_null() {
+            return Err(TaosError::new(Code::INVALID_PARA, "lines is null"));
+        }
+
+        if len < 0 {
+            return Err(TaosError::new(Code::INVALID_PARA, "len is less than 0"));
+        }
+
+        let slice: &[u8] = slice::from_raw_parts(lines as _, len as _);
+
+        let data = String::from_utf8(slice.to_vec())?;
+
+        debug!("sml_insert_raw, data: {data:?}");
+
+        let sml_data = if !tbnameKey.is_null() {
+            let tbname_key = CStr::from_ptr(tbnameKey)
+                .to_str()
+                .map_err(|_| TaosError::new(Code::INVALID_PARA, "tbnameKey is invalid utf-8"))?;
+
+            SmlDataBuilder::default()
+                .protocol(SchemalessProtocol::from(protocol))
+                .precision(SchemalessPrecision::from(precision))
+                .data(vec![data])
+                .ttl(ttl)
+                .req_id(reqid as u64)
+                .table_name_key(tbname_key.to_string())
+                .build()?
+        } else {
+            SmlDataBuilder::default()
+                .protocol(SchemalessProtocol::from(protocol))
+                .precision(SchemalessPrecision::from(precision))
+                .data(vec![data])
+                .ttl(ttl)
+                .req_id(reqid as u64)
+                .build()?
+        };
+
+        debug!("sml_insert_raw, sml_data: {sml_data:?}");
+
+        let (affected_rows, total_rows) = block_in_place_or_global(taos.client().s_put(&sml_data))?;
+
+        if !totalRows.is_null() {
+            *totalRows = total_rows.unwrap_or(0) as _;
+        }
+
+        Ok(ResultSet::Schemaless(SchemalessResultSet::new(
+            affected_rows.unwrap_or(0) as _,
+            Precision::Millisecond,
+            Duration::from_millis(0),
+        )))
     }
-
-    if len < 0 {
-        return Err(TaosError::new(Code::INVALID_PARA, "len is less than 0"));
-    }
-
-    let slice: &[u8] = slice::from_raw_parts(lines as _, len as _);
-
-    let data = String::from_utf8(slice.to_vec())?;
-
-    debug!("sml_insert_raw, data: {data:?}");
-
-    let sml_data = if !tbnameKey.is_null() {
-        let tbname_key = CStr::from_ptr(tbnameKey)
-            .to_str()
-            .map_err(|_| TaosError::new(Code::INVALID_PARA, "tbnameKey is invalid utf-8"))?;
-
-        SmlDataBuilder::default()
-            .protocol(SchemalessProtocol::from(protocol))
-            .precision(SchemalessPrecision::from(precision))
-            .data(vec![data])
-            .ttl(ttl)
-            .req_id(reqid as u64)
-            .table_name_key(tbname_key.to_string())
-            .build()?
-    } else {
-        SmlDataBuilder::default()
-            .protocol(SchemalessProtocol::from(protocol))
-            .precision(SchemalessPrecision::from(precision))
-            .data(vec![data])
-            .ttl(ttl)
-            .req_id(reqid as u64)
-            .build()?
-    };
-
-    debug!("sml_insert_raw, sml_data: {sml_data:?}");
-
-    let (affected_rows, total_rows) = block_in_place_or_global(taos.client().s_put(&sml_data))?;
-
-    if !totalRows.is_null() {
-        *totalRows = total_rows.unwrap_or(0) as _;
-    }
-
-    Ok(ResultSet::Schemaless(SchemalessResultSet::new(
-        affected_rows.unwrap_or(0) as _,
-        Precision::Millisecond,
-        Duration::from_millis(0),
-    )))
 }
 
 #[unsafe(no_mangle)]
@@ -244,16 +256,18 @@ pub unsafe extern "C" fn taos_schemaless_insert(
     protocol: c_int,
     precision: c_int,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        numLines,
-        protocol,
-        precision,
-        0,
-        generate_req_id() as i64,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            numLines,
+            protocol,
+            precision,
+            0,
+            generate_req_id() as i64,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -266,16 +280,18 @@ pub unsafe extern "C" fn taos_schemaless_insert_with_reqid(
     precision: c_int,
     reqid: i64,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        numLines,
-        protocol,
-        precision,
-        0,
-        reqid,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            numLines,
+            protocol,
+            precision,
+            0,
+            reqid,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -288,16 +304,18 @@ pub unsafe extern "C" fn taos_schemaless_insert_ttl(
     precision: c_int,
     ttl: i32,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        numLines,
-        protocol,
-        precision,
-        ttl,
-        generate_req_id() as i64,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            numLines,
+            protocol,
+            precision,
+            ttl,
+            generate_req_id() as i64,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -311,16 +329,18 @@ pub unsafe extern "C" fn taos_schemaless_insert_ttl_with_reqid(
     ttl: i32,
     reqid: i64,
 ) -> *mut TAOS_RES {
-    taos_schemaless_insert_ttl_with_reqid_tbname_key(
-        taos,
-        lines,
-        numLines,
-        protocol,
-        precision,
-        ttl,
-        reqid,
-        ptr::null_mut(),
-    )
+    unsafe {
+        taos_schemaless_insert_ttl_with_reqid_tbname_key(
+            taos,
+            lines,
+            numLines,
+            protocol,
+            precision,
+            ttl,
+            reqid,
+            ptr::null_mut(),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -336,21 +356,23 @@ pub unsafe extern "C" fn taos_schemaless_insert_ttl_with_reqid_tbname_key(
     reqid: i64,
     tbnameKey: *mut c_char,
 ) -> *mut TAOS_RES {
-    debug!(
-        "taos_schemaless_insert_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, num_lines: {numLines}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}"
-    );
-    match sml_insert(
-        taos, lines, numLines, protocol, precision, ttl, reqid, tbnameKey,
-    ) {
-        Ok(rs) => {
-            debug!("taos_schemaless_insert_ttl_with_reqid_tbname_key succ, rs: {rs:?}");
-            let res: TaosMaybeError<ResultSet> = rs.into();
-            Box::into_raw(Box::new(res)) as _
-        }
-        Err(err) => {
-            error!("taos_schemaless_insert_ttl_with_reqid_tbname_key failed, err: {err:?}");
-            set_err_and_get_code(TaosError::new(err.code(), &err.to_string()));
-            ptr::null_mut()
+    unsafe {
+        debug!(
+            "taos_schemaless_insert_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, num_lines: {numLines}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}"
+        );
+        match sml_insert(
+            taos, lines, numLines, protocol, precision, ttl, reqid, tbnameKey,
+        ) {
+            Ok(rs) => {
+                debug!("taos_schemaless_insert_ttl_with_reqid_tbname_key succ, rs: {rs:?}");
+                let res: TaosMaybeError<ResultSet> = rs.into();
+                Box::into_raw(Box::new(res)) as _
+            }
+            Err(err) => {
+                error!("taos_schemaless_insert_ttl_with_reqid_tbname_key failed, err: {err:?}");
+                set_err_and_get_code(TaosError::new(err.code(), &err.to_string()));
+                ptr::null_mut()
+            }
         }
     }
 }
@@ -367,72 +389,74 @@ unsafe fn sml_insert(
     reqid: i64,
     tbnameKey: *mut c_char,
 ) -> TaosResult<ResultSet> {
-    let taos = (taos as *mut Taos)
-        .as_mut()
-        .ok_or(TaosError::new(Code::INVALID_PARA, "taos is null"))?;
+    unsafe {
+        let taos = (taos as *mut Taos)
+            .as_mut()
+            .ok_or(TaosError::new(Code::INVALID_PARA, "taos is null"))?;
 
-    if lines.is_null() {
-        return Err(TaosError::new(Code::INVALID_PARA, "lines is null"));
-    }
-
-    if numLines < 0 {
-        return Err(TaosError::new(
-            Code::INVALID_PARA,
-            "numLines is less than 0",
-        ));
-    }
-
-    if SchemalessProtocol::from(protocol) == SchemalessProtocol::Json {
-        numLines = 1;
-    }
-
-    let lines: &[*mut c_char] = slice::from_raw_parts(lines as _, numLines as _);
-    let mut datas = Vec::with_capacity(numLines as _);
-
-    for line in lines {
-        if line.is_null() {
-            return Err(TaosError::new(Code::INVALID_PARA, "line is null"));
+        if lines.is_null() {
+            return Err(TaosError::new(Code::INVALID_PARA, "lines is null"));
         }
-        let data = CStr::from_ptr(*line)
-            .to_str()
-            .map_err(|_| TaosError::new(Code::INVALID_PARA, "line is invalid utf-8"))?;
-        datas.push(data.to_string());
+
+        if numLines < 0 {
+            return Err(TaosError::new(
+                Code::INVALID_PARA,
+                "numLines is less than 0",
+            ));
+        }
+
+        if SchemalessProtocol::from(protocol) == SchemalessProtocol::Json {
+            numLines = 1;
+        }
+
+        let lines: &[*mut c_char] = slice::from_raw_parts(lines as _, numLines as _);
+        let mut datas = Vec::with_capacity(numLines as _);
+
+        for line in lines {
+            if line.is_null() {
+                return Err(TaosError::new(Code::INVALID_PARA, "line is null"));
+            }
+            let data = CStr::from_ptr(*line)
+                .to_str()
+                .map_err(|_| TaosError::new(Code::INVALID_PARA, "line is invalid utf-8"))?;
+            datas.push(data.to_string());
+        }
+
+        debug!("sml_insert, datas: {datas:?}");
+
+        let sml_data = if !tbnameKey.is_null() {
+            let tbname_key = CStr::from_ptr(tbnameKey)
+                .to_str()
+                .map_err(|_| TaosError::new(Code::INVALID_PARA, "tbnameKey is invalid utf-8"))?;
+
+            SmlDataBuilder::default()
+                .protocol(SchemalessProtocol::from(protocol))
+                .precision(SchemalessPrecision::from(precision))
+                .data(datas)
+                .ttl(ttl)
+                .req_id(reqid as u64)
+                .table_name_key(tbname_key.to_string())
+                .build()?
+        } else {
+            SmlDataBuilder::default()
+                .protocol(SchemalessProtocol::from(protocol))
+                .precision(SchemalessPrecision::from(precision))
+                .data(datas)
+                .ttl(ttl)
+                .req_id(reqid as u64)
+                .build()?
+        };
+
+        debug!("sml_insert, sml_data: {sml_data:?}");
+
+        let (affected_rows, _) = block_in_place_or_global(taos.client().s_put(&sml_data))?;
+
+        Ok(ResultSet::Schemaless(SchemalessResultSet::new(
+            affected_rows.unwrap_or(0) as _,
+            Precision::Millisecond,
+            Duration::from_millis(0),
+        )))
     }
-
-    debug!("sml_insert, datas: {datas:?}");
-
-    let sml_data = if !tbnameKey.is_null() {
-        let tbname_key = CStr::from_ptr(tbnameKey)
-            .to_str()
-            .map_err(|_| TaosError::new(Code::INVALID_PARA, "tbnameKey is invalid utf-8"))?;
-
-        SmlDataBuilder::default()
-            .protocol(SchemalessProtocol::from(protocol))
-            .precision(SchemalessPrecision::from(precision))
-            .data(datas)
-            .ttl(ttl)
-            .req_id(reqid as u64)
-            .table_name_key(tbname_key.to_string())
-            .build()?
-    } else {
-        SmlDataBuilder::default()
-            .protocol(SchemalessProtocol::from(protocol))
-            .precision(SchemalessPrecision::from(precision))
-            .data(datas)
-            .ttl(ttl)
-            .req_id(reqid as u64)
-            .build()?
-    };
-
-    debug!("sml_insert, sml_data: {sml_data:?}");
-
-    let (affected_rows, _) = block_in_place_or_global(taos.client().s_put(&sml_data))?;
-
-    Ok(ResultSet::Schemaless(SchemalessResultSet::new(
-        affected_rows.unwrap_or(0) as _,
-        Precision::Millisecond,
-        Duration::from_millis(0),
-    )))
 }
 
 #[derive(Debug)]

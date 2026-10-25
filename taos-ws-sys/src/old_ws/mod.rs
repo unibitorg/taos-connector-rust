@@ -660,26 +660,32 @@ impl WsResultSetTrait for WsResultSet {
     }
 
     unsafe fn fetch_block(&mut self, ptr: *mut *const c_void, rows: *mut i32) -> Result<(), Error> {
-        match self {
-            WsResultSet::Sql(rs) => rs.fetch_block(ptr, rows),
-            WsResultSet::Tmq(rs) => rs.fetch_block(ptr, rows),
-            WsResultSet::Schemaless(rs) => rs.fetch_block(ptr, rows),
+        unsafe {
+            match self {
+                WsResultSet::Sql(rs) => rs.fetch_block(ptr, rows),
+                WsResultSet::Tmq(rs) => rs.fetch_block(ptr, rows),
+                WsResultSet::Schemaless(rs) => rs.fetch_block(ptr, rows),
+            }
         }
     }
 
     unsafe fn fetch_row(&mut self) -> Result<WS_ROW, Error> {
-        match self {
-            WsResultSet::Sql(rs) => rs.fetch_row(),
-            WsResultSet::Tmq(rs) => rs.fetch_row(),
-            WsResultSet::Schemaless(rs) => rs.fetch_row(),
+        unsafe {
+            match self {
+                WsResultSet::Sql(rs) => rs.fetch_row(),
+                WsResultSet::Tmq(rs) => rs.fetch_row(),
+                WsResultSet::Schemaless(rs) => rs.fetch_row(),
+            }
         }
     }
 
     unsafe fn get_raw_value(&mut self, row: usize, col: usize) -> (Ty, u32, *const c_void) {
-        match self {
-            WsResultSet::Sql(rs) => rs.get_raw_value(row, col),
-            WsResultSet::Tmq(rs) => rs.get_raw_value(row, col),
-            WsResultSet::Schemaless(rs) => rs.get_raw_value(row, col),
+        unsafe {
+            match self {
+                WsResultSet::Sql(rs) => rs.get_raw_value(row, col),
+                WsResultSet::Tmq(rs) => rs.get_raw_value(row, col),
+                WsResultSet::Schemaless(rs) => rs.get_raw_value(row, col),
+            }
         }
     }
 
@@ -776,55 +782,62 @@ impl WsResultSetTrait for WsSqlResultSet {
     }
 
     unsafe fn fetch_block(&mut self, ptr: *mut *const c_void, rows: *mut i32) -> Result<(), Error> {
-        tracing::trace!("fetch block with ptr {ptr:p}");
-        self.block = self.rs.fetch_raw_block()?;
-        if let Some(block) = self.block.as_ref() {
-            *ptr = block.as_raw_bytes().as_ptr() as _;
-            *rows = block.nrows() as _;
-        } else {
-            *rows = 0;
+        unsafe {
+            tracing::trace!("fetch block with ptr {ptr:p}");
+            self.block = self.rs.fetch_raw_block()?;
+            if let Some(block) = self.block.as_ref() {
+                *ptr = block.as_raw_bytes().as_ptr() as _;
+                *rows = block.nrows() as _;
+            } else {
+                *rows = 0;
+            }
+            tracing::trace!("fetch block with ptr {ptr:p} with rows {}", *rows);
+            Ok(())
         }
-        tracing::trace!("fetch block with ptr {ptr:p} with rows {}", *rows);
-        Ok(())
     }
 
     unsafe fn fetch_row(&mut self) -> Result<WS_ROW, Error> {
-        if self.block.is_none() || self.row.current_row >= self.block.as_ref().unwrap().nrows() {
-            self.block = self.rs.fetch_raw_block()?;
-            self.row.current_row = 0;
-        }
-
-        if let Some(block) = self.block.as_ref() {
-            if block.nrows() == 0 {
-                return Ok(std::ptr::null());
+        unsafe {
+            if self.block.is_none() || self.row.current_row >= self.block.as_ref().unwrap().nrows()
+            {
+                self.block = self.rs.fetch_raw_block()?;
+                self.row.current_row = 0;
             }
 
-            for col in 0..block.ncols() {
-                let tuple = block.get_raw_value_unchecked(self.row.current_row, col);
-                self.row.data[col] = tuple.2;
-            }
+            if let Some(block) = self.block.as_ref() {
+                if block.nrows() == 0 {
+                    return Ok(std::ptr::null());
+                }
 
-            self.row.current_row += 1;
-            Ok(self.row.data.as_ptr() as _)
-        } else {
-            Ok(std::ptr::null())
+                for col in 0..block.ncols() {
+                    let tuple = block.get_raw_value_unchecked(self.row.current_row, col);
+                    self.row.data[col] = tuple.2;
+                }
+
+                self.row.current_row += 1;
+                Ok(self.row.data.as_ptr() as _)
+            } else {
+                Ok(std::ptr::null())
+            }
         }
     }
 
     unsafe fn get_raw_value(&mut self, row: usize, col: usize) -> (Ty, u32, *const c_void) {
-        tracing::trace!("try to get raw value at ({row}, {col})");
-        match self.block.as_ref() {
-            Some(block) => {
-                if row < block.nrows() && col < block.ncols() {
-                    let res = block.get_raw_value_unchecked(row, col);
-                    tracing::trace!("got raw value at ({row}, {col}): {:?}", res);
-                    res
-                } else {
-                    tracing::trace!("out of range at ({row}, {col}), return null");
-                    (Ty::Null, 0, std::ptr::null())
+        unsafe {
+            tracing::trace!("try to get raw value at ({row}, {col})");
+            match self.block.as_ref() {
+                Some(block) => {
+                    if row < block.nrows() && col < block.ncols() {
+                        let res = block.get_raw_value_unchecked(row, col);
+                        tracing::trace!("got raw value at ({row}, {col}): {:?}", res);
+                        res
+                    } else {
+                        tracing::trace!("out of range at ({row}, {col}), return null");
+                        (Ty::Null, 0, std::ptr::null())
+                    }
                 }
+                None => (Ty::Null, 0, std::ptr::null()),
             }
-            None => (Ty::Null, 0, std::ptr::null()),
         }
     }
 
@@ -838,45 +851,47 @@ impl WsResultSetTrait for WsSqlResultSet {
 }
 
 unsafe fn connect_with_dsn(dsn: *const c_char) -> WsTaos {
-    let dsn = if dsn.is_null() {
-        CStr::from_bytes_with_nul(b"taos://localhost:6041\0").unwrap()
-    } else {
-        CStr::from_ptr(dsn)
-    };
+    unsafe {
+        let dsn = if dsn.is_null() {
+            CStr::from_bytes_with_nul(b"taos://localhost:6041\0").unwrap()
+        } else {
+            CStr::from_ptr(dsn)
+        };
 
-    let dsn = dsn.to_str()?;
-    let builder = TaosBuilder::from_dsn(dsn)?;
+        let dsn = dsn.to_str()?;
+        let builder = TaosBuilder::from_dsn(dsn)?;
 
-    if cfg!(all(windows, target_pointer_width = "32")) {
-        tracing::debug!(
-            "Connecting with dsn: {dsn}, using thread to avoid stack overflow on 32-bit Windows"
-        );
+        if cfg!(all(windows, target_pointer_width = "32")) {
+            tracing::debug!(
+                "Connecting with dsn: {dsn}, using thread to avoid stack overflow on 32-bit Windows"
+            );
 
-        let stack_size = 4 * 1024 * 1024;
+            let stack_size = 4 * 1024 * 1024;
 
-        let handle = thread::Builder::new()
-            .stack_size(stack_size)
-            .spawn(move || {
-                let result = builder.build();
-                match result {
-                    Ok(mut taos) => {
-                        builder.ping(&mut taos)?;
-                        Ok(taos)
+            let handle = thread::Builder::new()
+                .stack_size(stack_size)
+                .spawn(move || {
+                    let result = builder.build();
+                    match result {
+                        Ok(mut taos) => {
+                            builder.ping(&mut taos)?;
+                            Ok(taos)
+                        }
+                        Err(e) => Err(e),
                     }
-                    Err(e) => Err(e),
-                }
-            })
-            .expect("Failed to spawn thread");
+                })
+                .expect("Failed to spawn thread");
 
-        let result = handle.join().expect("Thread panicked");
-        match result {
-            Ok(taos) => Ok(taos),
-            Err(e) => Err(WsError::new(Code::FAILED, &format!("{e}"))),
+            let result = handle.join().expect("Thread panicked");
+            match result {
+                Ok(taos) => Ok(taos),
+                Err(e) => Err(WsError::new(Code::FAILED, &format!("{e}"))),
+            }
+        } else {
+            let mut taos = builder.build()?;
+            builder.ping(&mut taos)?;
+            Ok(taos)
         }
-    } else {
-        let mut taos = builder.build()?;
-        builder.ping(&mut taos)?;
-        Ok(taos)
     }
 }
 
@@ -889,27 +904,29 @@ unsafe fn connect_with_dsn(dsn: *const c_char) -> WsTaos {
 /// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_enable_log(log_level: *const c_char) -> i32 {
-    static ONCE_INIT: std::sync::Once = std::sync::Once::new();
+    unsafe {
+        static ONCE_INIT: std::sync::Once = std::sync::Once::new();
 
-    let log_level = if log_level.is_null() {
-        "info"
-    } else if let Ok(log_level_str) = CStr::from_ptr(log_level).to_str() {
-        log_level_str
-    } else {
-        return set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "log_level is not a valid string",
-        ));
-    };
+        let log_level = if log_level.is_null() {
+            "info"
+        } else if let Ok(log_level_str) = CStr::from_ptr(log_level).to_str() {
+            log_level_str
+        } else {
+            return set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "log_level is not a valid string",
+            ));
+        };
 
-    ONCE_INIT.call_once(|| {
-        let mut builder = pretty_env_logger::formatted_timed_builder();
-        builder.format_timestamp_nanos();
-        builder.parse_filters(log_level);
-        let _ = builder.try_init();
-    });
+        ONCE_INIT.call_once(|| {
+            let mut builder = pretty_env_logger::formatted_timed_builder();
+            builder.format_timestamp_nanos();
+            builder.parse_filters(log_level);
+            let _ = builder.try_init();
+        });
 
-    Code::SUCCESS.into()
+        Code::SUCCESS.into()
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -938,11 +955,13 @@ pub extern "C" fn ws_data_type(r#type: i32) -> *const c_char {
 /// ```
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_connect(dsn: *const c_char) -> *mut WS_TAOS {
-    match connect_with_dsn(dsn) {
-        Ok(client) => Box::into_raw(Box::new(client)) as _,
-        Err(err) => {
-            set_error_and_get_code(err);
-            std::ptr::null_mut()
+    unsafe {
+        match connect_with_dsn(dsn) {
+            Ok(client) => Box::into_raw(Box::new(client)) as _,
+            Err(err) => {
+                set_error_and_get_code(err);
+                std::ptr::null_mut()
+            }
         }
     }
 }
@@ -951,43 +970,49 @@ pub unsafe extern "C" fn ws_connect(dsn: *const c_char) -> *mut WS_TAOS {
 #[allow(static_mut_refs)]
 /// Same to taos_get_server_info, returns server version info.
 pub unsafe extern "C" fn ws_get_server_info(taos: *mut WS_TAOS) -> *const c_char {
-    static VERSION_INFO: OnceLock<CString> = OnceLock::new();
+    unsafe {
+        static VERSION_INFO: OnceLock<CString> = OnceLock::new();
 
-    if taos.is_null() {
-        set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is null"));
-        return std::ptr::null();
-    }
-
-    let version_info = VERSION_INFO.get_or_init(|| {
-        if let Some(taos) = (taos as *mut Taos).as_mut() {
-            CString::new(taos.version().as_bytes()).unwrap()
-        } else {
-            CString::new("").unwrap()
+        if taos.is_null() {
+            set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is null"));
+            return std::ptr::null();
         }
-    });
 
-    version_info.as_ptr()
+        let version_info = VERSION_INFO.get_or_init(|| {
+            if let Some(taos) = (taos as *mut Taos).as_mut() {
+                CString::new(taos.version().as_bytes()).unwrap()
+            } else {
+                CString::new("").unwrap()
+            }
+        });
+
+        version_info.as_ptr()
+    }
 }
 
 #[unsafe(no_mangle)]
 /// Same to taos_close. This should always be called after everything done with the connection.
 pub unsafe extern "C" fn ws_close(taos: *mut WS_TAOS) -> i32 {
-    if !taos.is_null() {
-        tracing::trace!("close connection {taos:p}");
-        let client = Box::from_raw(taos as *mut Taos);
-        // client.close();
-        drop(client);
-        return Code::SUCCESS.into();
+    unsafe {
+        if !taos.is_null() {
+            tracing::trace!("close connection {taos:p}");
+            let client = Box::from_raw(taos as *mut Taos);
+            // client.close();
+            drop(client);
+            return Code::SUCCESS.into();
+        }
+        set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is null"))
     }
-    set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is null"))
 }
 
 unsafe fn get_req_id(taos: *const WS_TAOS) -> u64 {
-    let reqid = match (taos as *const Taos).as_ref() {
-        Some(client) => client.get_req_id(),
-        None => return 0,
-    };
-    reqid
+    unsafe {
+        let reqid = match (taos as *const Taos).as_ref() {
+            Some(client) => client.get_req_id(),
+            None => return 0,
+        };
+        reqid
+    }
 }
 
 unsafe fn query_with_sql(
@@ -995,13 +1020,15 @@ unsafe fn query_with_sql(
     sql: *const c_char,
     req_id: u64,
 ) -> WsResult<WsResultSet> {
-    let client = (taos as *mut Taos)
-        .as_mut()
-        .ok_or(WsError::new(Code::INVALID_PARA, "client pointer is null"))?;
+    unsafe {
+        let client = (taos as *mut Taos)
+            .as_mut()
+            .ok_or(WsError::new(Code::INVALID_PARA, "client pointer is null"))?;
 
-    let sql = CStr::from_ptr(sql).to_str()?;
-    let rs = client.query_with_req_id(sql, req_id)?;
-    Ok(WsResultSet::Sql(WsSqlResultSet::new(rs)))
+        let sql = CStr::from_ptr(sql).to_str()?;
+        let rs = client.query_with_req_id(sql, req_id)?;
+        Ok(WsResultSet::Sql(WsSqlResultSet::new(rs)))
+    }
 }
 
 unsafe fn query_with_sql_timeout(
@@ -1009,14 +1036,16 @@ unsafe fn query_with_sql_timeout(
     sql: *const c_char,
     timeout: Duration,
 ) -> WsResult<WsResultSet> {
-    let _ = timeout;
-    let client = (taos as *mut Taos)
-        .as_mut()
-        .ok_or(WsError::new(Code::INVALID_PARA, "client pointer it null"))?;
+    unsafe {
+        let _ = timeout;
+        let client = (taos as *mut Taos)
+            .as_mut()
+            .ok_or(WsError::new(Code::INVALID_PARA, "client pointer it null"))?;
 
-    let sql = CStr::from_ptr(sql as _).to_str()?;
-    let rs = client.query(sql)?;
-    Ok(WsResultSet::Sql(WsSqlResultSet::new(rs)))
+        let sql = CStr::from_ptr(sql as _).to_str()?;
+        let rs = client.query(sql)?;
+        Ok(WsResultSet::Sql(WsSqlResultSet::new(rs)))
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1024,7 +1053,7 @@ unsafe fn query_with_sql_timeout(
 ///
 /// Please always use `ws_errno` to check it work and `ws_free_result` to free memory.
 pub unsafe extern "C" fn ws_query(taos: *mut WS_TAOS, sql: *const c_char) -> *mut WS_RES {
-    ws_query_with_reqid(taos, sql, get_req_id(taos))
+    unsafe { ws_query_with_reqid(taos, sql, get_req_id(taos)) }
 }
 
 #[unsafe(no_mangle)]
@@ -1033,23 +1062,27 @@ pub unsafe extern "C" fn ws_query_with_reqid(
     sql: *const c_char,
     req_id: u64,
 ) -> *mut WS_RES {
-    tracing::trace!("query {:?}, req_id {:?}", CStr::from_ptr(sql), req_id);
-    let res: WsMaybeError<WsResultSet> = query_with_sql(taos, sql, req_id).into();
-    tracing::trace!("query done: {:?}", res);
-    Box::into_raw(Box::new(res)) as _
+    unsafe {
+        tracing::trace!("query {:?}, req_id {:?}", CStr::from_ptr(sql), req_id);
+        let res: WsMaybeError<WsResultSet> = query_with_sql(taos, sql, req_id).into();
+        tracing::trace!("query done: {:?}", res);
+        Box::into_raw(Box::new(res)) as _
+    }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stop_query(rs: *mut WS_RES) -> i32 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(rs) => {
-            rs.stop_query();
-            Code::SUCCESS.into()
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(rs) => {
+                rs.stop_query();
+                Code::SUCCESS.into()
+            }
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "object is invalid")),
         }
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "object is invalid")),
     }
 }
 
@@ -1062,107 +1095,124 @@ pub unsafe extern "C" fn ws_query_timeout(
     sql: *const c_char,
     seconds: u32,
 ) -> *mut WS_RES {
-    let res: WsMaybeError<WsResultSet> =
-        query_with_sql_timeout(taos, sql, Duration::from_secs(seconds as _)).into();
-    Box::into_raw(Box::new(res)) as _
+    unsafe {
+        let res: WsMaybeError<WsResultSet> =
+            query_with_sql_timeout(taos, sql, Duration::from_secs(seconds as _)).into();
+        Box::into_raw(Box::new(res)) as _
+    }
 }
 
 /// Get taosc execution timing duration as nanoseconds.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_take_timing(rs: *mut WS_RES) -> i64 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(rs) => rs.take_timing().as_nanos() as _,
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "WS_RES is null")) as _,
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(rs) => rs.take_timing().as_nanos() as _,
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "WS_RES is null")) as _,
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// Always use this to ensure that the query is executed correctly.
 pub unsafe extern "C" fn ws_errno(rs: *mut WS_RES) -> i32 {
-    if rs.is_null() {
-        return get_c_errno();
-    }
-    match (rs as *mut WsMaybeError<()>)
-        .as_ref()
-        .and_then(WsMaybeError::errno)
-    {
-        Some(c) => get_err_code_fromated(c),
-        _ => Code::SUCCESS.into(),
+    unsafe {
+        if rs.is_null() {
+            return get_c_errno();
+        }
+        match (rs as *mut WsMaybeError<()>)
+            .as_ref()
+            .and_then(WsMaybeError::errno)
+        {
+            Some(c) => get_err_code_fromated(c),
+            _ => Code::SUCCESS.into(),
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// Use this method to get a formatted error string when query errno is not 0.
 pub unsafe extern "C" fn ws_errstr(rs: *mut WS_RES) -> *const c_char {
-    if rs.is_null() {
-        if get_c_errno() == 0 {
-            return EMPTY.as_ptr();
+    unsafe {
+        if rs.is_null() {
+            if get_c_errno() == 0 {
+                return EMPTY.as_ptr();
+            }
+            return get_c_error_str() as _;
         }
-        return get_c_error_str() as _;
-    }
-    match (rs as *mut WsMaybeError<()>)
-        .as_ref()
-        .and_then(WsMaybeError::errstr)
-    {
-        Some(e) => e,
-        _ => EMPTY.as_ptr(),
+        match (rs as *mut WsMaybeError<()>)
+            .as_ref()
+            .and_then(WsMaybeError::errstr)
+        {
+            Some(e) => e,
+            _ => EMPTY.as_ptr(),
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// Works exactly the same to taos_affected_rows.
 pub unsafe extern "C" fn ws_affected_rows(rs: *const WS_RES) -> i32 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_ref()
-        .and_then(|s| s.safe_deref())
-    {
-        Some(rs) => rs.affected_rows() as _,
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invallid")),
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_ref()
+            .and_then(|s| s.safe_deref())
+        {
+            Some(rs) => rs.affected_rows() as _,
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invallid")),
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// Works exactly the same to taos_affected_rows64.
 pub unsafe extern "C" fn ws_affected_rows64(rs: *const WS_RES) -> i64 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_ref()
-        .and_then(|s| s.safe_deref())
-    {
-        Some(rs) => rs.affected_rows64() as _,
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invallid")) as _,
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_ref()
+            .and_then(|s| s.safe_deref())
+        {
+            Some(rs) => rs.affected_rows64() as _,
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invallid")) as _,
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// use db.
 pub unsafe extern "C" fn ws_select_db(taos: *mut WS_TAOS, db: *const c_char) -> i32 {
-    tracing::trace!("db {:?}", CStr::from_ptr(db));
+    unsafe {
+        tracing::trace!("db {:?}", CStr::from_ptr(db));
 
-    let client = (taos as *mut Taos).as_mut();
-    let client = match client {
-        Some(t) => t,
-        None => {
-            return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is invallid"));
+        let client = (taos as *mut Taos).as_mut();
+        let client = match client {
+            Some(t) => t,
+            None => {
+                return set_error_and_get_code(WsError::new(
+                    Code::INVALID_PARA,
+                    "taos is invallid",
+                ));
+            }
+        };
+
+        let db = CStr::from_ptr(db).to_str();
+        let db = match db {
+            Ok(t) => t,
+            Err(_) => {
+                return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "db is invallid"));
+            }
+        };
+
+        let sql = format!("use {db}");
+        let rs = client.query(sql);
+
+        match rs {
+            Err(e) => set_error_and_get_code(WsError::from(e)),
+            _ => Code::SUCCESS.into(),
         }
-    };
-
-    let db = CStr::from_ptr(db).to_str();
-    let db = match db {
-        Ok(t) => t,
-        Err(_) => {
-            return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "db is invallid"));
-        }
-    };
-
-    let sql = format!("use {db}");
-    let rs = client.query(sql);
-
-    match rs {
-        Err(e) => set_error_and_get_code(WsError::from(e)),
-        _ => Code::SUCCESS.into(),
     }
 }
 
@@ -1178,38 +1228,44 @@ pub unsafe extern "C" fn ws_get_client_info() -> *const c_char {
 #[unsafe(no_mangle)]
 /// Returns number of fields in current result set.
 pub unsafe extern "C" fn ws_field_count(rs: *const WS_RES) -> i32 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_ref()
-        .and_then(|s| s.safe_deref())
-    {
-        Some(rs) => rs.num_of_fields(),
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invalid")),
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_ref()
+            .and_then(|s| s.safe_deref())
+        {
+            Some(rs) => rs.num_of_fields(),
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invalid")),
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// If the element is update query or not
 pub unsafe extern "C" fn ws_is_update_query(rs: *const WS_RES) -> bool {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_ref()
-        .and_then(|s| s.safe_deref())
-    {
-        Some(rs) => rs.num_of_fields() == 0,
-        _ => true,
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_ref()
+            .and_then(|s| s.safe_deref())
+        {
+            Some(rs) => rs.num_of_fields() == 0,
+            _ => true,
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// Works like taos_fetch_fields, users should use it along with a `num_of_fields`.
 pub unsafe extern "C" fn ws_fetch_fields(rs: *mut WS_RES) -> *const WS_FIELD {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(rs) => rs.get_fields(),
-        _ => {
-            set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invalid"));
-            std::ptr::null()
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(rs) => rs.get_fields(),
+            _ => {
+                set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invalid"));
+                std::ptr::null()
+            }
         }
     }
 }
@@ -1217,14 +1273,16 @@ pub unsafe extern "C" fn ws_fetch_fields(rs: *mut WS_RES) -> *const WS_FIELD {
 #[unsafe(no_mangle)]
 /// To fetch v2-compatible fields structs.
 pub unsafe extern "C" fn ws_fetch_fields_v2(rs: *mut WS_RES) -> *const WS_FIELD_V2 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(rs) => rs.get_fields_v2(),
-        _ => {
-            set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invalid"));
-            std::ptr::null()
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(rs) => rs.get_fields_v2(),
+            _ => {
+                set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is invalid"));
+                std::ptr::null()
+            }
         }
     }
 }
@@ -1237,63 +1295,71 @@ pub unsafe extern "C" fn ws_fetch_raw_block(
     pData: *mut *const c_void,
     numOfRows: *mut i32,
 ) -> i32 {
-    unsafe fn handle_error(error_message: &str, rows: *mut i32) -> i32 {
-        *rows = 0;
-        set_error_and_get_code(WsError::new(Code::FAILED, error_message))
-    }
+    unsafe {
+        unsafe fn handle_error(error_message: &str, rows: *mut i32) -> i32 {
+            unsafe {
+                *rows = 0;
+                set_error_and_get_code(WsError::new(Code::FAILED, error_message))
+            }
+        }
 
-    match (rs as *mut WsMaybeError<WsResultSet>).as_mut() {
-        Some(rs) => match rs.safe_deref_mut() {
-            Some(s) => match s.fetch_block(pData, numOfRows) {
-                Ok(()) => Code::SUCCESS.into(),
-                Err(err) => {
-                    set_error_and_get_code(WsError::new(err.errno(), &err.errstr()));
-                    let code = err.errno();
-                    rs.error = Some(err.into());
-                    code.into()
-                }
+        match (rs as *mut WsMaybeError<WsResultSet>).as_mut() {
+            Some(rs) => match rs.safe_deref_mut() {
+                Some(s) => match s.fetch_block(pData, numOfRows) {
+                    Ok(()) => Code::SUCCESS.into(),
+                    Err(err) => {
+                        set_error_and_get_code(WsError::new(err.errno(), &err.errstr()));
+                        let code = err.errno();
+                        rs.error = Some(err.into());
+                        code.into()
+                    }
+                },
+                None => handle_error("WS_RES data is null", numOfRows),
             },
-            None => handle_error("WS_RES data is null", numOfRows),
-        },
-        _ => handle_error("WS_RES is null", numOfRows),
+            _ => handle_error("WS_RES is null", numOfRows),
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// If the element in (row, column) is null or not
 pub unsafe extern "C" fn ws_is_null(rs: *const WS_RES, row: i32, col: i32) -> bool {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_ref()
-        .and_then(|s| s.safe_deref())
-    {
-        Some(WsResultSet::Sql(rs)) => match &(rs.block) {
-            Some(block) => block.is_null(row as _, col as _),
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_ref()
+            .and_then(|s| s.safe_deref())
+        {
+            Some(WsResultSet::Sql(rs)) => match &(rs.block) {
+                Some(block) => block.is_null(row as _, col as _),
+                _ => true,
+            },
             _ => true,
-        },
-        _ => true,
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// Works like taos_fetch_row
 pub unsafe extern "C" fn ws_fetch_row(rs: *mut WS_RES) -> WS_ROW {
-    match (rs as *mut WsMaybeError<WsResultSet>).as_mut() {
-        Some(rs) => match rs.safe_deref_mut() {
-            Some(s) => match s.fetch_row() {
-                Ok(p_row) => p_row,
-                Err(err) => {
-                    set_error_and_get_code(WsError::new(err.errno(), &err.errstr()));
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>).as_mut() {
+            Some(rs) => match rs.safe_deref_mut() {
+                Some(s) => match s.fetch_row() {
+                    Ok(p_row) => p_row,
+                    Err(err) => {
+                        set_error_and_get_code(WsError::new(err.errno(), &err.errstr()));
+                        std::ptr::null()
+                    }
+                },
+                None => {
+                    set_error_and_get_code(WsError::new(Code::INVALID_PARA, "WS_RES data is null"));
                     std::ptr::null()
                 }
             },
-            None => {
-                set_error_and_get_code(WsError::new(Code::INVALID_PARA, "WS_RES data is null"));
+            _ => {
+                set_error_and_get_code(WsError::new(Code::INVALID_PARA, "WS_RES is null"));
                 std::ptr::null()
             }
-        },
-        _ => {
-            set_error_and_get_code(WsError::new(Code::INVALID_PARA, "WS_RES is null"));
-            std::ptr::null()
         }
     }
 }
@@ -1301,33 +1367,39 @@ pub unsafe extern "C" fn ws_fetch_row(rs: *mut WS_RES) -> WS_ROW {
 #[unsafe(no_mangle)]
 /// Returns number of fields in current result set.
 pub unsafe extern "C" fn ws_num_fields(rs: *const WS_RES) -> i32 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_ref()
-        .and_then(|s| s.safe_deref())
-    {
-        Some(rs) => rs.num_of_fields(),
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is null")),
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_ref()
+            .and_then(|s| s.safe_deref())
+        {
+            Some(rs) => rs.num_of_fields(),
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is null")),
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 /// Same to taos_free_result. Every websocket result-set object should be freed with this method.
 pub unsafe extern "C" fn ws_free_result(rs: *mut WS_RES) -> i32 {
-    if !rs.is_null() {
-        let _ = Box::from_raw(rs as *mut WsMaybeError<WsResultSet>);
+    unsafe {
+        if !rs.is_null() {
+            let _ = Box::from_raw(rs as *mut WsMaybeError<WsResultSet>);
+        }
+        Code::SUCCESS.into()
     }
-    Code::SUCCESS.into()
 }
 
 #[unsafe(no_mangle)]
 /// Same to taos_result_precision.
 pub unsafe extern "C" fn ws_result_precision(rs: *const WS_RES) -> i32 {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(rs) => rs.precision() as i32,
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is null")),
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(rs) => rs.precision() as i32,
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "rs is null")),
+        }
     }
 }
 
@@ -1355,20 +1427,22 @@ pub unsafe extern "C" fn ws_get_value_in_block(
     ty: *mut u8,
     len: *mut u32,
 ) -> *const c_void {
-    match (rs as *mut WsMaybeError<WsResultSet>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(rs) => {
-            let value = rs.get_raw_value(row as _, col as _);
-            *ty = value.0 as u8;
-            *len = value.1 as _;
-            value.2
-        }
-        _ => {
-            *ty = Ty::Null as u8;
-            *len = 0;
-            std::ptr::null()
+    unsafe {
+        match (rs as *mut WsMaybeError<WsResultSet>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(rs) => {
+                let value = rs.get_raw_value(row as _, col as _);
+                *ty = value.0 as u8;
+                *len = value.1 as _;
+                value.2
+            }
+            _ => {
+                *ty = Ty::Null as u8;
+                *len = 0;
+                std::ptr::null()
+            }
         }
     }
 }
@@ -1384,12 +1458,14 @@ pub unsafe extern "C" fn ws_timestamp_to_rfc3339(
     precision: i32,
     use_z: bool,
 ) {
-    let precision = Precision::from_u8(precision as u8);
-    let s = Timestamp::new(raw, precision)
-        .to_datetime_with_tz()
-        .to_rfc3339_opts(precision.to_seconds_format(), use_z);
+    unsafe {
+        let precision = Precision::from_u8(precision as u8);
+        let s = Timestamp::new(raw, precision)
+            .to_datetime_with_tz()
+            .to_rfc3339_opts(precision.to_seconds_format(), use_z);
 
-    std::ptr::copy_nonoverlapping(s.as_ptr(), dest, s.len());
+        std::ptr::copy_nonoverlapping(s.as_ptr(), dest, s.len());
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1400,163 +1476,168 @@ pub unsafe extern "C" fn ws_print_row(
     fields: *const WS_FIELD,
     num_fields: i32,
 ) -> i32 {
-    // rust string to cstr
-    unsafe fn write_to_cstr(remain_space: &mut usize, str: *mut c_char, content: &str) -> i32 {
-        if content.len() > *remain_space {
-            return 0;
+    unsafe {
+        // rust string to cstr
+        unsafe fn write_to_cstr(remain_space: &mut usize, str: *mut c_char, content: &str) -> i32 {
+            unsafe {
+                if content.len() > *remain_space {
+                    return 0;
+                }
+                let cstr = CString::new(content).unwrap();
+                std::ptr::copy_nonoverlapping(cstr.as_ptr(), str, content.len());
+                *remain_space -= content.len();
+                content.len() as i32
+            }
         }
-        let cstr = CString::new(content).unwrap();
-        std::ptr::copy_nonoverlapping(cstr.as_ptr(), str, content.len());
-        *remain_space -= content.len();
-        content.len() as i32
+
+        let mut len = 0;
+        let mut remain_space = (str_len - 1) as usize;
+        if remain_space == 0
+            || str_len <= 0
+            || str.is_null()
+            || row.is_null()
+            || fields.is_null()
+            || num_fields <= 0
+        {
+            return Code::SUCCESS.into();
+        }
+
+        let row_slice = std::slice::from_raw_parts(row, num_fields as usize);
+        let fields_slice = std::slice::from_raw_parts(fields, num_fields as usize);
+
+        for i in 0..num_fields as usize {
+            if i > 0 && remain_space > 0 {
+                *str.add(len as usize) = ' ' as c_char;
+                len += 1;
+                remain_space -= 1;
+            }
+
+            let field_ptr = row_slice[i];
+            if field_ptr.is_null() {
+                len += write_to_cstr(&mut remain_space, str.add(len as usize), "NULL");
+                continue;
+            }
+
+            match Ty::from(fields_slice[i].r#type) {
+                Ty::TinyInt => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const i8);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::UTinyInt => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const u8);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::SmallInt => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const i16);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::USmallInt => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const u16);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::Int => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const i32);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::UInt => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const u32);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::BigInt | Ty::Timestamp => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const i64);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::UBigInt => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const u64);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::Float => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const f32);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::Double => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const f64);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{value}").as_str(),
+                    );
+                }
+                Ty::Bool => {
+                    let value = std::ptr::read_unaligned(field_ptr as *const bool);
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        format!("{}", value as i32).as_str(),
+                    );
+                }
+                Ty::VarBinary | Ty::Geometry => {
+                    let data = field_ptr.offset(-2) as *const InlineBytes;
+                    let data = &*data;
+                    let data = Bytes::from(data.as_bytes());
+
+                    len += write_to_cstr(
+                        &mut remain_space,
+                        str.add(len as usize),
+                        &hex::bytes_to_hex_string(data),
+                    );
+                }
+                Ty::VarChar => {
+                    let data = field_ptr.offset(-2) as *const InlineStr;
+                    let data = &*data;
+
+                    len += write_to_cstr(&mut remain_space, str.add(len as usize), data.as_str());
+                }
+                Ty::NChar => {
+                    let data = field_ptr.offset(-2) as *const InlineNChar;
+                    let data = &*data;
+
+                    len +=
+                        write_to_cstr(&mut remain_space, str.add(len as usize), &data.to_string());
+                }
+                _ => {}
+            }
+        }
+
+        *str.add(len as usize) = 0; // add the null terminator
+        len
     }
-
-    let mut len = 0;
-    let mut remain_space = (str_len - 1) as usize;
-    if remain_space == 0
-        || str_len <= 0
-        || str.is_null()
-        || row.is_null()
-        || fields.is_null()
-        || num_fields <= 0
-    {
-        return Code::SUCCESS.into();
-    }
-
-    let row_slice = std::slice::from_raw_parts(row, num_fields as usize);
-    let fields_slice = std::slice::from_raw_parts(fields, num_fields as usize);
-
-    for i in 0..num_fields as usize {
-        if i > 0 && remain_space > 0 {
-            *str.add(len as usize) = ' ' as c_char;
-            len += 1;
-            remain_space -= 1;
-        }
-
-        let field_ptr = row_slice[i];
-        if field_ptr.is_null() {
-            len += write_to_cstr(&mut remain_space, str.add(len as usize), "NULL");
-            continue;
-        }
-
-        match Ty::from(fields_slice[i].r#type) {
-            Ty::TinyInt => {
-                let value = std::ptr::read_unaligned(field_ptr as *const i8);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::UTinyInt => {
-                let value = std::ptr::read_unaligned(field_ptr as *const u8);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::SmallInt => {
-                let value = std::ptr::read_unaligned(field_ptr as *const i16);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::USmallInt => {
-                let value = std::ptr::read_unaligned(field_ptr as *const u16);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::Int => {
-                let value = std::ptr::read_unaligned(field_ptr as *const i32);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::UInt => {
-                let value = std::ptr::read_unaligned(field_ptr as *const u32);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::BigInt | Ty::Timestamp => {
-                let value = std::ptr::read_unaligned(field_ptr as *const i64);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::UBigInt => {
-                let value = std::ptr::read_unaligned(field_ptr as *const u64);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::Float => {
-                let value = std::ptr::read_unaligned(field_ptr as *const f32);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::Double => {
-                let value = std::ptr::read_unaligned(field_ptr as *const f64);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{value}").as_str(),
-                );
-            }
-            Ty::Bool => {
-                let value = std::ptr::read_unaligned(field_ptr as *const bool);
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    format!("{}", value as i32).as_str(),
-                );
-            }
-            Ty::VarBinary | Ty::Geometry => {
-                let data = field_ptr.offset(-2) as *const InlineBytes;
-                let data = &*data;
-                let data = Bytes::from(data.as_bytes());
-
-                len += write_to_cstr(
-                    &mut remain_space,
-                    str.add(len as usize),
-                    &hex::bytes_to_hex_string(data),
-                );
-            }
-            Ty::VarChar => {
-                let data = field_ptr.offset(-2) as *const InlineStr;
-                let data = &*data;
-
-                len += write_to_cstr(&mut remain_space, str.add(len as usize), data.as_str());
-            }
-            Ty::NChar => {
-                let data = field_ptr.offset(-2) as *const InlineNChar;
-                let data = &*data;
-
-                len += write_to_cstr(&mut remain_space, str.add(len as usize), &data.to_string());
-            }
-            _ => {}
-        }
-    }
-
-    *str.add(len as usize) = 0; // add the null terminator
-    len
 }
 
 #[unsafe(no_mangle)]
@@ -1567,52 +1648,54 @@ pub unsafe extern "C" fn ws_get_current_db(
     len: c_int,
     required: *mut c_int,
 ) -> i32 {
-    if taos.is_null() {
-        return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is null"));
-    }
+    unsafe {
+        if taos.is_null() {
+            return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is null"));
+        }
 
-    let rs = ws_query(taos, b"SELECT DATABASE()\0" as *const u8 as _);
-    if rs.is_null() {
-        return set_error_and_get_code(WsError::new(Code::FAILED, "query failed"));
-    }
+        let rs = ws_query(taos, b"SELECT DATABASE()\0" as *const u8 as _);
+        if rs.is_null() {
+            return set_error_and_get_code(WsError::new(Code::FAILED, "query failed"));
+        }
 
-    let mut block: *const c_void = std::ptr::null();
-    let mut rows = 0;
-    let mut code = ws_fetch_raw_block(rs, &mut block, &mut rows);
-    if code != 0 {
+        let mut block: *const c_void = std::ptr::null();
+        let mut rows = 0;
+        let mut code = ws_fetch_raw_block(rs, &mut block, &mut rows);
+        if code != 0 {
+            ws_free_result(rs);
+            return code;
+        }
+
+        let mut ty: Ty = Ty::Null;
+        let mut len_actual = 0u32;
+        let res = ws_get_value_in_block(rs, 0, 0, &mut ty as *mut Ty as _, &mut len_actual);
+        if res.is_null() {
+            ws_free_result(rs);
+            return set_error_and_get_code(WsError::new(Code::FAILED, "get value failed"));
+        }
+
+        let copy_len = if len <= 0 {
+            0
+        } else if len_actual < len as u32 {
+            len_actual as usize
+        } else {
+            (len - 1) as usize
+        };
+
+        std::ptr::copy_nonoverlapping(res as _, database, copy_len);
+        if copy_len > 0 {
+            *database.add(copy_len) = 0;
+        }
+
+        if len as u32 <= len_actual {
+            *required = len_actual as _;
+            code = -1;
+        }
+
         ws_free_result(rs);
-        return code;
+
+        code
     }
-
-    let mut ty: Ty = Ty::Null;
-    let mut len_actual = 0u32;
-    let res = ws_get_value_in_block(rs, 0, 0, &mut ty as *mut Ty as _, &mut len_actual);
-    if res.is_null() {
-        ws_free_result(rs);
-        return set_error_and_get_code(WsError::new(Code::FAILED, "get value failed"));
-    }
-
-    let copy_len = if len <= 0 {
-        0
-    } else if len_actual < len as u32 {
-        len_actual as usize
-    } else {
-        (len - 1) as usize
-    };
-
-    std::ptr::copy_nonoverlapping(res as _, database, copy_len);
-    if copy_len > 0 {
-        *database.add(copy_len) = 0;
-    }
-
-    if len as u32 <= len_actual {
-        *required = len_actual as _;
-        code = -1;
-    }
-
-    ws_free_result(rs);
-
-    code
 }
 
 /*  --------------------------schemaless INTERFACE------------------------------- */
@@ -1625,16 +1708,18 @@ pub unsafe extern "C" fn ws_schemaless_insert_raw(
     protocal: c_int,
     precision: c_int,
 ) -> *mut WS_RES {
-    ws_schemaless_insert_raw_ttl_with_reqid(
-        taos,
-        lines,
-        len,
-        totalRows,
-        protocal,
-        precision,
-        0,
-        get_req_id(taos),
-    )
+    unsafe {
+        ws_schemaless_insert_raw_ttl_with_reqid(
+            taos,
+            lines,
+            len,
+            totalRows,
+            protocal,
+            precision,
+            0,
+            get_req_id(taos),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1647,9 +1732,11 @@ pub unsafe extern "C" fn ws_schemaless_insert_raw_with_reqid(
     precision: c_int,
     reqid: u64,
 ) -> *mut WS_RES {
-    ws_schemaless_insert_raw_ttl_with_reqid(
-        taos, lines, len, totalRows, protocal, precision, 0, reqid,
-    )
+    unsafe {
+        ws_schemaless_insert_raw_ttl_with_reqid(
+            taos, lines, len, totalRows, protocal, precision, 0, reqid,
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1662,16 +1749,18 @@ pub unsafe extern "C" fn ws_schemaless_insert_raw_ttl(
     precision: c_int,
     ttl: c_int,
 ) -> *mut WS_RES {
-    ws_schemaless_insert_raw_ttl_with_reqid(
-        taos,
-        lines,
-        len,
-        totalRows,
-        protocal,
-        precision,
-        ttl,
-        get_req_id(taos),
-    )
+    unsafe {
+        ws_schemaless_insert_raw_ttl_with_reqid(
+            taos,
+            lines,
+            len,
+            totalRows,
+            protocal,
+            precision,
+            ttl,
+            get_req_id(taos),
+        )
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -1685,17 +1774,19 @@ pub unsafe extern "C" fn ws_schemaless_insert_raw_ttl_with_reqid(
     ttl: c_int,
     reqid: u64,
 ) -> *mut WS_RES {
-    match schemaless_insert_raw(taos, lines, len, totalRows, protocal, precision, ttl, reqid) {
-        Ok(rs) => {
-            tracing::trace!("schemaless insert done: {:?}", rs);
-            let rs: WsMaybeError<WsResultSet> = rs.into();
-            Box::into_raw(Box::new(rs)) as _
-        }
-        Err(e) => {
-            tracing::trace!("schemaless insert failed: {:?}", e);
-            let error_message = format!("schemaless insert failed: {e}");
-            set_error_and_get_code(WsError::new(e.code, &error_message));
-            std::ptr::null_mut() as _
+    unsafe {
+        match schemaless_insert_raw(taos, lines, len, totalRows, protocal, precision, ttl, reqid) {
+            Ok(rs) => {
+                tracing::trace!("schemaless insert done: {:?}", rs);
+                let rs: WsMaybeError<WsResultSet> = rs.into();
+                Box::into_raw(Box::new(rs)) as _
+            }
+            Err(e) => {
+                tracing::trace!("schemaless insert failed: {:?}", e);
+                let error_message = format!("schemaless insert failed: {e}");
+                set_error_and_get_code(WsError::new(e.code, &error_message));
+                std::ptr::null_mut() as _
+            }
         }
     }
 }
@@ -1711,29 +1802,31 @@ unsafe fn schemaless_insert_raw(
     ttl: c_int,
     reqid: u64,
 ) -> WsResult<WsResultSet> {
-    let client = (taos as *mut Taos)
-        .as_mut()
-        .ok_or(WsError::new(Code::INVALID_PARA, "client pointer it null"))?;
+    unsafe {
+        let client = (taos as *mut Taos)
+            .as_mut()
+            .ok_or(WsError::new(Code::INVALID_PARA, "client pointer it null"))?;
 
-    let slice = std::slice::from_raw_parts(lines as *const u8, len as usize);
+        let slice = std::slice::from_raw_parts(lines as *const u8, len as usize);
 
-    let data = String::from_utf8(slice.to_vec())?;
+        let data = String::from_utf8(slice.to_vec())?;
 
-    let sml_data = SmlDataBuilder::default()
-        .protocol(SchemalessProtocol::from(protocal))
-        .precision(SchemalessPrecision::from(precision))
-        .data(vec![data])
-        .ttl(ttl)
-        .req_id(reqid)
-        .build()?;
+        let sml_data = SmlDataBuilder::default()
+            .protocol(SchemalessProtocol::from(protocal))
+            .precision(SchemalessPrecision::from(precision))
+            .data(vec![data])
+            .ttl(ttl)
+            .req_id(reqid)
+            .build()?;
 
-    client.put(&sml_data)?;
-    let r = WsResultSet::Schemaless(WsSchemalessResultSet::new(
-        0,
-        Precision::Millisecond,
-        Duration::from_millis(0),
-    ));
-    Ok(r)
+        client.put(&sml_data)?;
+        let r = WsResultSet::Schemaless(WsSchemalessResultSet::new(
+            0,
+            Precision::Millisecond,
+            Duration::from_millis(0),
+        ));
+        Ok(r)
+    }
 }
 
 #[cfg(test)]

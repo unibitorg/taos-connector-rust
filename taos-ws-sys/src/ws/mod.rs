@@ -18,7 +18,7 @@ use taos_query::{TBuilder, redact_dsn};
 use taos_ws::query::{ConnOption, Error};
 use taos_ws::{Offset, Taos, TaosBuilder};
 use tmq::TmqResultSet;
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::ws::config::WsTlsMode;
 
@@ -177,34 +177,36 @@ unsafe fn connect(
     totp_code: *const c_char,
     bearer_token: *const c_char,
 ) -> TaosResult<Taos> {
-    let addr = if !ip.is_null() {
-        let ip = CStr::from_ptr(ip).to_str()?;
-        let port = util::resolve_port(ip, port);
-        format!("{ip}:{port}")
-    } else if let Some(addr) = config::adapter_list() {
-        addr.to_string()
-    } else {
-        let host = DEFAULT_HOST;
-        let port = util::resolve_port(host, port);
-        format!("{host}:{port}")
-    };
+    unsafe {
+        let addr = if !ip.is_null() {
+            let ip = CStr::from_ptr(ip).to_str()?;
+            let port = util::resolve_port(ip, port);
+            format!("{ip}:{port}")
+        } else if let Some(addr) = config::adapter_list() {
+            addr.to_string()
+        } else {
+            let host = DEFAULT_HOST;
+            let port = util::resolve_port(host, port);
+            format!("{host}:{port}")
+        };
 
-    let user = util::c_char_to_str(user)?;
-    let pass = util::c_char_to_str(pass)?;
-    let db = util::c_char_to_str(db)?;
-    let totp_code = util::c_char_to_str(totp_code)?;
-    let bearer_token = util::c_char_to_str(bearer_token)?;
+        let user = util::c_char_to_str(user)?;
+        let pass = util::c_char_to_str(pass)?;
+        let db = util::c_char_to_str(db)?;
+        let totp_code = util::c_char_to_str(totp_code)?;
+        let bearer_token = util::c_char_to_str(bearer_token)?;
 
-    let dsn = util::DsnBuilder::new()
-        .addr(Some(&addr))
-        .user(user)
-        .pass(pass)
-        .db(db)
-        .totp_code(totp_code)
-        .bearer_token(bearer_token)
-        .build();
+        let dsn = util::DsnBuilder::new()
+            .addr(Some(&addr))
+            .user(user)
+            .pass(pass)
+            .db(db)
+            .totp_code(totp_code)
+            .bearer_token(bearer_token)
+            .build();
 
-    connect_from_dsn(&dsn)
+        connect_from_dsn(&dsn)
+    }
 }
 
 fn handle_connect_error(mut err: TaosError) -> *mut TAOS {
@@ -232,12 +234,14 @@ pub unsafe extern "C" fn taos_connect_with_dsn(dsn: *const c_char) -> *mut TAOS 
 }
 
 unsafe fn connect_with_dsn(dsn: *const c_char) -> TaosResult<Taos> {
-    let dsn = if !dsn.is_null() {
-        CStr::from_ptr(dsn).to_str()?
-    } else {
-        DEFAULT_DSN
-    };
-    connect_from_dsn(dsn)
+    unsafe {
+        let dsn = if !dsn.is_null() {
+            CStr::from_ptr(dsn).to_str()?
+        } else {
+            DEFAULT_DSN
+        };
+        connect_from_dsn(dsn)
+    }
 }
 
 fn connect_from_dsn(dsn: &str) -> TaosResult<Taos> {
@@ -561,160 +565,164 @@ pub unsafe extern "C" fn taos_connect_with(options: *const OPTIONS) -> *mut TAOS
 }
 
 unsafe fn connect_with(options: *const OPTIONS) -> TaosResult<Taos> {
-    let dsn = build_dsn_from_options(options)?;
-    connect_from_dsn(&dsn)
+    unsafe {
+        let dsn = build_dsn_from_options(options)?;
+        connect_from_dsn(&dsn)
+    }
 }
 
 unsafe fn build_dsn_from_options(options: *const OPTIONS) -> TaosResult<String> {
-    if options.is_null() {
-        let dsn = util::DsnBuilder::new().build();
-        debug!(
-            "build_dsn_from_options, options is null, use default dsn: {}",
-            redact_dsn(&dsn)
-        );
-        return Ok(dsn);
-    }
-
-    let opts = &*options;
-    let count = opts.count as usize;
-    if count > opts.keys.len() || count > opts.values.len() {
-        error!(
-            "build_dsn_from_options, invalid count: {count}, exceeds arrays len: {}",
-            opts.keys.len()
-        );
-        return Err(TaosError::new(
-            Code::INVALID_PARA,
-            "options count out of range",
-        ));
-    }
-
-    let mut map = HashMap::with_capacity(count);
-    for i in 0..count {
-        if opts.keys[i].is_null() || opts.values[i].is_null() {
-            warn!("build_dsn_from_options, index {i} has null key/value, skip");
-            continue;
+    unsafe {
+        if options.is_null() {
+            let dsn = util::DsnBuilder::new().build();
+            debug!(
+                "build_dsn_from_options, options is null, use default dsn: {}",
+                redact_dsn(&dsn)
+            );
+            return Ok(dsn);
         }
-        let key = CStr::from_ptr(opts.keys[i]).to_str()?;
-        let value = CStr::from_ptr(opts.values[i]).to_str()?;
-        if let Some(value) = map.insert(key, value) {
-            debug!("build_dsn_from_options, duplicate key: {key}, overwrite previous value");
+
+        let opts = &*options;
+        let count = opts.count as usize;
+        if count > opts.keys.len() || count > opts.values.len() {
+            error!(
+                "build_dsn_from_options, invalid count: {count}, exceeds arrays len: {}",
+                opts.keys.len()
+            );
+            return Err(TaosError::new(
+                Code::INVALID_PARA,
+                "options count out of range",
+            ));
         }
-    }
-    trace!("build_dsn_from_options, raw options: {:?}", SecretMap(&map));
 
-    let user = map.remove(USER).unwrap_or(DEFAULT_USER);
-    let pass = map.remove(PASS).unwrap_or(DEFAULT_PASS);
-    let db = map.remove(DB).unwrap_or(DEFAULT_DB);
-
-    let port = map
-        .remove(PORT)
-        .map_or(0, |s| s.parse::<u16>().unwrap_or(0));
-
-    let addr = match map.remove(ADAPTER_LIST) {
-        Some(addr) => {
-            debug!("build_dsn_from_options, use adapterList option: {addr}");
-            addr.to_string()
-        }
-        None => match map.remove(IP) {
-            Some(host) => {
-                let port = util::resolve_port(host, port);
-                let addr = format!("{host}:{port}");
-                debug!("build_dsn_from_options, use host: {host}, address: {addr}");
-                addr
+        let mut map = HashMap::with_capacity(count);
+        for i in 0..count {
+            if opts.keys[i].is_null() || opts.values[i].is_null() {
+                warn!("build_dsn_from_options, index {i} has null key/value, skip");
+                continue;
             }
-            None => match config::adapter_list() {
-                Some(addr) => {
-                    debug!("build_dsn_from_options, use adapterList config: {addr}");
-                    addr.to_string()
-                }
-                None => {
-                    let host = DEFAULT_HOST;
+            let key = CStr::from_ptr(opts.keys[i]).to_str()?;
+            let value = CStr::from_ptr(opts.values[i]).to_str()?;
+            if let Some(value) = map.insert(key, value) {
+                debug!("build_dsn_from_options, duplicate key: {key}, overwrite previous value");
+            }
+        }
+        trace!("build_dsn_from_options, raw options: {:?}", SecretMap(&map));
+
+        let user = map.remove(USER).unwrap_or(DEFAULT_USER);
+        let pass = map.remove(PASS).unwrap_or(DEFAULT_PASS);
+        let db = map.remove(DB).unwrap_or(DEFAULT_DB);
+
+        let port = map
+            .remove(PORT)
+            .map_or(0, |s| s.parse::<u16>().unwrap_or(0));
+
+        let addr = match map.remove(ADAPTER_LIST) {
+            Some(addr) => {
+                debug!("build_dsn_from_options, use adapterList option: {addr}");
+                addr.to_string()
+            }
+            None => match map.remove(IP) {
+                Some(host) => {
                     let port = util::resolve_port(host, port);
                     let addr = format!("{host}:{port}");
-                    debug!(
-                        "build_dsn_from_options, fallback default host: {host}, address: {addr}"
-                    );
+                    debug!("build_dsn_from_options, use host: {host}, address: {addr}");
                     addr
                 }
+                None => match config::adapter_list() {
+                    Some(addr) => {
+                        debug!("build_dsn_from_options, use adapterList config: {addr}");
+                        addr.to_string()
+                    }
+                    None => {
+                        let host = DEFAULT_HOST;
+                        let port = util::resolve_port(host, port);
+                        let addr = format!("{host}:{port}");
+                        debug!(
+                            "build_dsn_from_options, fallback default host: {host}, address: {addr}"
+                        );
+                        addr
+                    }
+                },
             },
-        },
-    };
+        };
 
-    let conn_retries = config::conn_retries().to_string();
-    let retry_backoff_ms = config::retry_backoff_ms().to_string();
-    let retry_backoff_max_ms = config::retry_backoff_max_ms().to_string();
+        let conn_retries = config::conn_retries().to_string();
+        let retry_backoff_ms = config::retry_backoff_ms().to_string();
+        let retry_backoff_max_ms = config::retry_backoff_max_ms().to_string();
 
-    if !map.contains_key(CONN_RETRIES) {
-        map.insert(CONN_RETRIES, &conn_retries);
-    }
-    if !map.contains_key(RETRY_BACKOFF_MS) {
-        map.insert(RETRY_BACKOFF_MS, &retry_backoff_ms);
-    }
-    if !map.contains_key(RETRY_BACKOFF_MAX_MS) {
-        map.insert(RETRY_BACKOFF_MAX_MS, &retry_backoff_max_ms);
-    }
-
-    if config::adapter_ha() && !map.contains_key(ADAPTER_HA) {
-        map.insert(ADAPTER_HA, "true");
-    }
-
-    let compression = match map.remove(COMPRESSION) {
-        Some(s) => match s.trim() {
-            "1" => "true".to_string(),
-            "0" => "false".to_string(),
-            _ => {
-                return Err(TaosError::new(
-                    Code::INVALID_PARA,
-                    &format!("invalid value for {COMPRESSION}: {s}"),
-                ));
-            }
-        },
-        None => config::compression().to_string(),
-    };
-    map.insert(COMPRESSION, &compression);
-
-    let ws_tls_mode = map
-        .remove(WS_TLS_MODE)
-        .map(|s| s.parse::<WsTlsMode>())
-        .transpose()?
-        .unwrap_or(config::ws_tls_mode());
-
-    let protocol = match ws_tls_mode {
-        WsTlsMode::Disabled => "ws",
-        _ => "wss",
-    };
-
-    if ws_tls_mode == WsTlsMode::VerifyCa {
-        map.insert("tls_mode", "verify_ca");
-    } else if ws_tls_mode == WsTlsMode::VerifyIdentity {
-        map.insert("tls_mode", "verify_identity");
-    };
-
-    let tls_version = map
-        .remove(WS_TLS_VERSION)
-        .map_or_else(|| config::ws_tls_version().to_string(), |s| s.to_string());
-    map.insert("tls_version", &tls_version);
-
-    let tls_ca = match map.remove(WS_TLS_CA) {
-        Some(ca) => Some(ca.to_string()),
-        None => config::ws_tls_ca().map(|ca| ca.to_string()),
-    };
-    if let Some(ca) = &tls_ca {
-        map.insert("tls_ca", ca);
-    }
-
-    let mut params = String::with_capacity(64);
-    for (i, (&key, &value)) in map.iter().enumerate() {
-        let key = util::camel_to_snake(key);
-        if i > 0 {
-            params.push('&');
+        if !map.contains_key(CONN_RETRIES) {
+            map.insert(CONN_RETRIES, &conn_retries);
         }
-        params.push_str(&key);
-        params.push('=');
-        params.push_str(value);
-    }
+        if !map.contains_key(RETRY_BACKOFF_MS) {
+            map.insert(RETRY_BACKOFF_MS, &retry_backoff_ms);
+        }
+        if !map.contains_key(RETRY_BACKOFF_MAX_MS) {
+            map.insert(RETRY_BACKOFF_MAX_MS, &retry_backoff_max_ms);
+        }
 
-    Ok(format!("{protocol}://{user}:{pass}@{addr}/{db}?{params}"))
+        if config::adapter_ha() && !map.contains_key(ADAPTER_HA) {
+            map.insert(ADAPTER_HA, "true");
+        }
+
+        let compression = match map.remove(COMPRESSION) {
+            Some(s) => match s.trim() {
+                "1" => "true".to_string(),
+                "0" => "false".to_string(),
+                _ => {
+                    return Err(TaosError::new(
+                        Code::INVALID_PARA,
+                        &format!("invalid value for {COMPRESSION}: {s}"),
+                    ));
+                }
+            },
+            None => config::compression().to_string(),
+        };
+        map.insert(COMPRESSION, &compression);
+
+        let ws_tls_mode = map
+            .remove(WS_TLS_MODE)
+            .map(|s| s.parse::<WsTlsMode>())
+            .transpose()?
+            .unwrap_or(config::ws_tls_mode());
+
+        let protocol = match ws_tls_mode {
+            WsTlsMode::Disabled => "ws",
+            _ => "wss",
+        };
+
+        if ws_tls_mode == WsTlsMode::VerifyCa {
+            map.insert("tls_mode", "verify_ca");
+        } else if ws_tls_mode == WsTlsMode::VerifyIdentity {
+            map.insert("tls_mode", "verify_identity");
+        };
+
+        let tls_version = map
+            .remove(WS_TLS_VERSION)
+            .map_or_else(|| config::ws_tls_version().to_string(), |s| s.to_string());
+        map.insert("tls_version", &tls_version);
+
+        let tls_ca = match map.remove(WS_TLS_CA) {
+            Some(ca) => Some(ca.to_string()),
+            None => config::ws_tls_ca().map(|ca| ca.to_string()),
+        };
+        if let Some(ca) = &tls_ca {
+            map.insert("tls_ca", ca);
+        }
+
+        let mut params = String::with_capacity(64);
+        for (i, (&key, &value)) in map.iter().enumerate() {
+            let key = util::camel_to_snake(key);
+            if i > 0 {
+                params.push('&');
+            }
+            params.push_str(&key);
+            params.push('=');
+            params.push_str(value);
+        }
+
+        Ok(format!("{protocol}://{user}:{pass}@{addr}/{db}?{params}"))
+    }
 }
 
 struct SecretMap<'a>(&'a HashMap<&'a str, &'a str>);
@@ -967,34 +975,42 @@ impl ResultSetOperations for ResultSet {
         ptr: *mut *mut c_void,
         rows: *mut i32,
     ) -> Result<(), Error> {
-        match self {
-            ResultSet::Query(rs) => rs.fetch_raw_block(ptr, rows),
-            ResultSet::Schemaless(rs) => rs.fetch_raw_block(ptr, rows),
-            ResultSet::Tmq(rs) => rs.fetch_raw_block(ptr, rows),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.fetch_raw_block(ptr, rows),
+                ResultSet::Schemaless(rs) => rs.fetch_raw_block(ptr, rows),
+                ResultSet::Tmq(rs) => rs.fetch_raw_block(ptr, rows),
+            }
         }
     }
 
     unsafe fn fetch_block(&mut self, rows: *mut TAOS_ROW, num: *mut c_int) -> Result<(), Error> {
-        match self {
-            ResultSet::Query(rs) => rs.fetch_block(rows, num),
-            ResultSet::Schemaless(rs) => rs.fetch_block(rows, num),
-            ResultSet::Tmq(rs) => rs.fetch_block(rows, num),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.fetch_block(rows, num),
+                ResultSet::Schemaless(rs) => rs.fetch_block(rows, num),
+                ResultSet::Tmq(rs) => rs.fetch_block(rows, num),
+            }
         }
     }
 
     unsafe fn fetch_row(&mut self) -> Result<TAOS_ROW, Error> {
-        match self {
-            ResultSet::Query(rs) => rs.fetch_row(),
-            ResultSet::Schemaless(rs) => rs.fetch_row(),
-            ResultSet::Tmq(rs) => rs.fetch_row(),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.fetch_row(),
+                ResultSet::Schemaless(rs) => rs.fetch_row(),
+                ResultSet::Tmq(rs) => rs.fetch_row(),
+            }
         }
     }
 
     unsafe fn get_raw_value(&mut self, row: usize, col: usize) -> (Ty, u32, *const c_void) {
-        match self {
-            ResultSet::Query(rs) => rs.get_raw_value(row, col),
-            ResultSet::Schemaless(rs) => rs.get_raw_value(row, col),
-            ResultSet::Tmq(rs) => rs.get_raw_value(row, col),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.get_raw_value(row, col),
+                ResultSet::Schemaless(rs) => rs.get_raw_value(row, col),
+                ResultSet::Tmq(rs) => rs.get_raw_value(row, col),
+            }
         }
     }
 
@@ -1020,10 +1036,12 @@ impl ResultSetOperations for ResultSet {
         result: *mut bool,
         rows: *mut c_int,
     ) -> Result<(), TaosError> {
-        match self {
-            ResultSet::Query(rs) => rs.is_null_by_column(column_index, result, rows),
-            ResultSet::Schemaless(rs) => rs.is_null_by_column(column_index, result, rows),
-            ResultSet::Tmq(rs) => rs.is_null_by_column(column_index, result, rows),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.is_null_by_column(column_index, result, rows),
+                ResultSet::Schemaless(rs) => rs.is_null_by_column(column_index, result, rows),
+                ResultSet::Tmq(rs) => rs.is_null_by_column(column_index, result, rows),
+            }
         }
     }
 

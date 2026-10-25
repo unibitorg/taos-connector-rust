@@ -261,10 +261,12 @@ impl<'a> DsnBuilder<'a> {
 }
 
 pub unsafe fn c_char_to_str<'a>(ptr: *const c_char) -> TaosResult<Option<&'a str>> {
-    if !ptr.is_null() {
-        CStr::from_ptr(ptr).to_str().map(Some).map_err(Into::into)
-    } else {
-        Ok(None)
+    unsafe {
+        if !ptr.is_null() {
+            CStr::from_ptr(ptr).to_str().map(Some).map_err(Into::into)
+        } else {
+            Ok(None)
+        }
     }
 }
 
