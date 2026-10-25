@@ -1,0 +1,51 @@
+# Replace REVISION with a reviewed release tag or full commit SHA before adoption.
+minimum_prek_version: '0.5.7'
+default_stages: [pre-commit]
+exclude: '(^|/)(\.evidence|\.dsh|test-evidence|\.qa-cache)/|^target/'
+repos:
+  - repo: https://github.com/unibitorg/engineering-standards.git
+    rev: ccb11a83377e0c302f716afe683660b44e8ce11f
+    hooks:
+      - id: unstage-local-evidence
+        priority: 0
+      - id: utf8-text
+        priority: 10
+      - id: rustfmt-changed
+        priority: 10
+      - id: strip-ai-attribution
+        stages: [commit-msg]
+  - repo: builtin
+    hooks:
+      - id: trailing-whitespace
+        stages: [pre-commit]
+        exclude: '\.md$'
+        priority: 20
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+        priority: 30
+      - id: mixed-line-ending
+        stages: [pre-commit]
+        args: [--fix=lf]
+        priority: 40
+      - id: check-merge-conflict
+        stages: [pre-commit]
+        args: [--assume-in-merge]
+        priority: 50
+      - id: check-added-large-files
+        stages: [pre-commit]
+        args: [--maxkb=5120]
+        priority: 50
+      - id: detect-private-key
+        stages: [pre-commit]
+        priority: 50
+      - id: check-toml
+        stages: [pre-commit]
+        priority: 50
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        stages: [pre-commit]
+        priority: 50
+      - id: no-commit-to-branch
+        stages: [pre-commit]
+        args: [--branch, pre-dev, --branch, dev, --branch, test, --branch, main]
+        priority: 50

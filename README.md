@@ -236,3 +236,7 @@ We welcome developers to contribute to this project. When submitting PRs, please
 ## 11. License
 
 [MIT License](./LICENSE)
+
+## 开发环境
+
+开发环境初始化：运行 `bash scripts/init-env.sh` 安装组织 prek hooks；预先准备 Python ≥ 3.11、仓库指定工具链的 rustfmt，提交时自动应用机械格式修复。
