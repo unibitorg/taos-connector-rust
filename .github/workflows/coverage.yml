@@ -125,7 +125,7 @@ jobs:
           cp ./TDengine/debug/build/lib/libtaosnative.so* ./release/
           cp ./TDengine/debug/build/lib/librocksdb.so.8.1.1 ./release/ ||:
           cp ./TDengine/include/client/taos.h ./release/
-          cat >./release/install.sh<<EOF 
+          cat >./release/install.sh<<EOF
           chmod +x ./taos
           chmod +x ./taosd
           chmod +x ./taosadapter

@@ -1270,5 +1270,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Merge with main branch ([aa71b8e](aa71b8e0681808fc40d53ff654ab6e21637d7e58))
 - Fix nchar/json error, refactor error handling ([9d8c632](9d8c632c093ae838e066e23c3fdda52bafa1a403))
 - Fix stmt bind with raw block error ([d45e37a](d45e37ac1125aba07b2efe48d8375e0b4af2a6bf))
-
-
