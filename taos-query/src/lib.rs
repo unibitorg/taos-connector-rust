@@ -13,7 +13,7 @@ use async_trait::async_trait;
 pub use common::RawBlock;
 use common::*;
 pub use iter::*;
-pub use mdsn::{redact_dsn, value_is_true, Address, Dsn, DsnError, IntoDsn, RedactedDsn};
+pub use mdsn::{Address, Dsn, DsnError, IntoDsn, RedactedDsn, redact_dsn, value_is_true};
 pub use prelude::sync::{Fetchable, Queryable};
 pub use prelude::{AsyncFetchable, AsyncQueryable};
 pub use serde::de::value::Error as DeError;
@@ -105,10 +105,9 @@ pub trait TBuilder: Sized + Send + Sync + 'static {
     /// Assert the server is an enterprise edition.
     #[doc(hidden)]
     fn assert_enterprise_edition(&self) -> RawResult<()> {
-        if let Ok(edition) = self.get_edition() {
-            edition.assert_enterprise_edition()
-        } else {
-            Err(RawError::from_string("get edition failed"))
+        match self.get_edition() {
+            Ok(edition) => edition.assert_enterprise_edition(),
+            _ => Err(RawError::from_string("get edition failed")),
         }
     }
 
@@ -209,10 +208,9 @@ pub trait AsyncTBuilder: Sized + Send + Sync + 'static {
     /// Assert the server is an enterprise edition.
     #[doc(hidden)]
     async fn assert_enterprise_edition(&self) -> RawResult<()> {
-        if let Ok(edition) = self.get_edition().await {
-            edition.assert_enterprise_edition()
-        } else {
-            Err(RawError::from_string("get edition failed"))
+        match self.get_edition().await {
+            Ok(edition) => edition.assert_enterprise_edition(),
+            _ => Err(RawError::from_string("get edition failed")),
         }
     }
 

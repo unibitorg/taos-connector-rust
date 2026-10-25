@@ -1588,7 +1588,7 @@ mod async_tests {
         let db = "test_varchar";
 
         macro_rules! assert_eq {
-            ($left:expr, $right:expr) => {
+            ($left:expr_2021, $right:expr_2021) => {
                 let _ = taos
                     .exec_with_req_id(&format!("drop database {db}"), 1)
                     .await;

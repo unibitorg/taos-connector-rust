@@ -36,9 +36,9 @@ macro_rules! _impl_inline_lines {
                 ///
                 /// Do not use it directly.
                 #[inline]
-                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self {
+                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self { unsafe {
                     &*ptr.cast::<InlineBytes<$ty>>()
-                }
+                }}
 
                 #[inline]
                 pub const fn as_ptr(&self) -> *const u8 {

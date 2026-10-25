@@ -1,11 +1,11 @@
 use std::borrow::Cow;
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 use std::future::Future;
 use std::os::raw::{c_int, c_void};
 use std::pin::Pin;
 use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant};
 
@@ -14,9 +14,9 @@ use pin_project_lite::pin_project;
 use taos_query::prelude::RawError;
 
 use super::ApiEntry;
+use crate::RawTaos;
 use crate::into_c_str::IntoCStr;
 use crate::types::TAOS_RES;
-use crate::RawTaos;
 
 pin_project! {
     /// A future that will resolve when the query is complete.
@@ -68,79 +68,88 @@ impl Future for ExecFuture<'_, '_> {
         let this = self.project();
         let state = this.state;
 
-        if let Some((result, cost)) = state.result.take() {
-            let d = state.time.elapsed();
-            tracing::trace!("Waken {:?} after callback received", d - cost);
-            Poll::Ready(result)
-        } else {
-            if state.waiting.load(Ordering::SeqCst) {
-                tracing::trace!("It's waked but still waiting for taos_query_a callback.");
-                return Poll::Pending;
+        match state.result.take() {
+            Some((result, cost)) => {
+                let d = state.time.elapsed();
+                tracing::trace!("Waken {:?} after callback received", d - cost);
+                Poll::Ready(result)
             }
-
-            state.waiting.store(true, Ordering::SeqCst);
-
-            #[no_mangle]
-            #[inline(never)]
-            unsafe extern "C" fn taos_optin_exec_future_callback(
-                param: *mut c_void,
-                res: *mut TAOS_RES,
-                code: c_int,
-            ) {
-                if param.is_null() {
-                    tracing::error!("query callback param should not be null");
-                    return;
+            _ => {
+                if state.waiting.load(Ordering::SeqCst) {
+                    tracing::trace!("It's waked but still waiting for taos_query_a callback.");
+                    return Poll::Pending;
                 }
-                let param = Box::from_raw(param as *mut AsyncQueryParam);
-                if let Some(state) = param.state.upgrade() {
-                    {
-                        let s = state.as_ref();
-                        let cost = s.time.elapsed();
-                        tracing::trace!("Received query callback in {:?}", cost);
-                        if res.is_null() && code == 0 {
-                            unreachable!("query callback should be ok or error");
+
+                state.waiting.store(true, Ordering::SeqCst);
+
+                #[unsafe(no_mangle)]
+                #[inline(never)]
+                unsafe extern "C" fn taos_optin_exec_future_callback(
+                    param: *mut c_void,
+                    res: *mut TAOS_RES,
+                    code: c_int,
+                ) {
+                    unsafe {
+                        if param.is_null() {
+                            tracing::error!("query callback param should not be null");
+                            return;
                         }
+                        let param = Box::from_raw(param as *mut AsyncQueryParam);
+                        match param.state.upgrade() {
+                            Some(state) => {
+                                {
+                                    let s = state.as_ref();
+                                    let cost = s.time.elapsed();
+                                    tracing::trace!("Received query callback in {:?}", cost);
+                                    if res.is_null() && code == 0 {
+                                        unreachable!("query callback should be ok or error");
+                                    }
 
-                        let result = if code != 0 {
-                            let str = s.api.err_str(res);
-                            let err = RawError::new_with_context(
-                                code,
-                                str,
-                                format!(
-                                    "Error while querying with sql \"{}\"",
-                                    CStr::from_ptr(param.sql).to_string_lossy()
-                                ),
-                            );
-                            s.api.free_result(res);
-                            Err(err)
-                        } else {
-                            debug_assert!(!res.is_null());
-                            assert_ne!(res as usize, 1, "res should not be 1");
-                            let affected_rows = (s.api.taos_affected_rows)(res) as usize;
-                            s.api.free_result(res);
-                            Ok(affected_rows)
-                        };
+                                    let result = if code != 0 {
+                                        let str = s.api.err_str(res);
+                                        let err = RawError::new_with_context(
+                                            code,
+                                            str,
+                                            format!(
+                                                "Error while querying with sql \"{}\"",
+                                                CStr::from_ptr(param.sql).to_string_lossy()
+                                            ),
+                                        );
+                                        s.api.free_result(res);
+                                        Err(err)
+                                    } else {
+                                        debug_assert!(!res.is_null());
+                                        assert_ne!(res as usize, 1, "res should not be 1");
+                                        let affected_rows =
+                                            (s.api.taos_affected_rows)(res) as usize;
+                                        s.api.free_result(res);
+                                        Ok(affected_rows)
+                                    };
 
-                        s.result.store(Some((result, cost)));
-                        s.waiting.store(false, Ordering::SeqCst);
+                                    s.result.store(Some((result, cost)));
+                                    s.waiting.store(false, Ordering::SeqCst);
+                                }
+                                param.waker.wake();
+                            }
+                            _ => {
+                                tracing::trace!("Query callback received but no listener");
+                            }
+                        }
                     }
-                    param.waker.wake();
-                } else {
-                    tracing::trace!("Query callback received but no listener");
                 }
-            }
 
-            let param = Box::new(AsyncQueryParam {
-                state: Rc::downgrade(state),
-                sql: this.sql.as_ptr() as _,
-                waker: cx.waker().clone(),
-            });
-            this.raw.query_a(
-                this.sql.as_ref(),
-                taos_optin_exec_future_callback as _,
-                Box::into_raw(param) as *mut _,
-            );
-            Poll::Pending
+                let param = Box::new(AsyncQueryParam {
+                    state: Rc::downgrade(state),
+                    sql: this.sql.as_ptr() as _,
+                    waker: cx.waker().clone(),
+                });
+                this.raw.query_a(
+                    this.sql.as_ref(),
+                    taos_optin_exec_future_callback as _,
+                    Box::into_raw(param) as *mut _,
+                );
+                Poll::Pending
+            }
         }
     }
 }

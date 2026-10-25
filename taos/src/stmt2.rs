@@ -1,6 +1,6 @@
 use taos_optin::Stmt2 as NativeStmt2;
-use taos_query::stmt2::Stmt2BindParam;
 use taos_query::RawResult;
+use taos_query::stmt2::Stmt2BindParam;
 use taos_ws::Stmt2 as WsStmt2;
 
 use crate::{ResultSet, ResultSetInner, TaosInner};
@@ -152,8 +152,8 @@ mod tests {
     use taos_query::{Queryable, TBuilder};
 
     use super::Stmt2;
-    use crate::sync::*;
     use crate::TaosBuilder;
+    use crate::sync::*;
 
     #[test]
     fn test_stmt2_insert_single_row() -> anyhow::Result<()> {

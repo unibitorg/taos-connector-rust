@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 use std::marker::PhantomData;
 
 use chrono::{DateTime, Local};
-use tracing::field::{self, Visit};
 use tracing::Event;
+use tracing::field::{self, Visit};
+use tracing_subscriber::Registry;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::registry::{LookupSpan, Scope};
-use tracing_subscriber::Registry;
 
-use crate::writer::RollingFileAppender;
 use crate::QidManager;
+use crate::writer::RollingFileAppender;
 
 #[derive(Clone)]
 struct RecordFields(BTreeMap<String, String>, Option<String>);
@@ -365,10 +365,10 @@ fn format_str(value: &str) -> String {
 mod tests {
     use tracing_subscriber::fmt::MakeWriter;
 
+    use crate::QidManager;
     use crate::fake::Qid;
     use crate::layer::TaosLayer;
     use crate::utils::{QidMetadataGetter, QidMetadataSetter, Span};
-    use crate::QidManager;
 
     struct TestWriter(std::sync::mpsc::Sender<String>);
 

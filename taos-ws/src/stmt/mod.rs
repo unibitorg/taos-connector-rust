@@ -1,6 +1,6 @@
 use std::fmt::Debug;
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use dashmap::DashMap as HashMap;
@@ -12,7 +12,7 @@ use taos_query::common::views::views_to_raw_block;
 use taos_query::common::{ColumnView, Precision, Ty};
 use taos_query::prelude::{InlinableWrite, RawResult};
 use taos_query::stmt::{AsyncBindable, Bindable};
-use taos_query::{block_in_place_or_global, IntoDsn, RawBlock};
+use taos_query::{IntoDsn, RawBlock, block_in_place_or_global};
 use tokio::sync::{oneshot, watch};
 use tokio_tungstenite::tungstenite::protocol::Message;
 
@@ -348,59 +348,59 @@ impl Stmt {
                                         },
                                         StmtOk::Init(req_id, stmt_id) => {
                                             tracing::trace!("stmt init done: {{ req_id: {}, stmt_id: {:?}}}", req_id, stmt_id);
-                                            if let Some((_, sender)) = queries_sender.remove(&req_id)
-                                            {
+                                            match queries_sender.remove(&req_id)
+                                            { Some((_, sender)) => {
                                                 sender.send(stmt_id).unwrap();
-                                            }  else {
+                                            } _ => {
                                                 tracing::trace!("Stmt init failed because req id 0x{req_id:x} not exist");
-                                            }
+                                            }}
                                         }
                                         StmtOk::Stmt(stmt_id, res) => {
-                                            if let Some(sender) = fetches_sender.get(&stmt_id) {
+                                            match fetches_sender.get(&stmt_id) { Some(sender) => {
                                                 tracing::trace!("send data to fetches with id {}", stmt_id);
                                                 // let res = res.clone();
                                                 sender.send(res).await.unwrap();
                                             // }) {
 
-                                            } else {
+                                            } _ => {
                                                 tracing::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
-                                            }
+                                            }}
                                         }
                                         StmtOk::StmtPrepare(stmt_id, res) => {
-                                            if let Some(sender) = prepare_result_fetches_sender.get(&stmt_id) {
+                                            match prepare_result_fetches_sender.get(&stmt_id) { Some(sender) => {
                                                 tracing::trace!("send data to fetches with id {}", stmt_id);
 
                                                 sender.send(res).await.unwrap();
 
-                                            } else {
+                                            } _ => {
                                                 tracing::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
-                                            }
+                                            }}
                                         }
                                         StmtOk::StmtFields(stmt_id, res) => {
-                                            if let Some(sender) = fields_fetches_sender.get(&stmt_id) {
+                                            match fields_fetches_sender.get(&stmt_id) { Some(sender) => {
                                                 tracing::trace!("send data to fetches with id {}", stmt_id);
                                                 // let res = res.clone();
                                                 sender.send(res).await.unwrap();
 
-                                            } else {
+                                            } _ => {
                                                 tracing::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
-                                            }
+                                            }}
                                         }
                                         StmtOk::StmtParam(stmt_id, res) => {
-                                            if let Some(sender) = param_fetches_sender.get(&stmt_id) {
+                                            match param_fetches_sender.get(&stmt_id) { Some(sender) => {
                                                 tracing::trace!("send data to fetches with id {}", stmt_id);
                                                 sender.send(res).await.unwrap();
-                                            } else {
+                                            } _ => {
                                                 tracing::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
-                                            }
+                                            }}
                                         }
                                         StmtOk::StmtUseResult(stmt_id, res) => {
-                                            if let Some(sender) = use_result_fetches_sender.get(&stmt_id) {
+                                            match use_result_fetches_sender.get(&stmt_id) { Some(sender) => {
                                                 tracing::trace!("send data to fetches with id {}", stmt_id);
                                                 sender.send(res).await.unwrap();
-                                            } else {
+                                            } _ => {
                                                 tracing::trace!("Got unknown stmt id: {stmt_id} with result: {res:?}");
-                                            }
+                                            }}
                                         }
                                     }
                                 }
@@ -783,8 +783,8 @@ mod tests {
     use taos_query::common::ColumnView;
     use taos_query::{AsyncTBuilder, Dsn};
 
-    use crate::stmt::Stmt;
     use crate::TaosBuilder;
+    use crate::stmt::Stmt;
 
     #[tokio::test]
     async fn test_client() -> anyhow::Result<()> {
@@ -1016,10 +1016,11 @@ mod tests {
 
         assert!(res.is_err());
 
-        assert!(res
-            .unwrap_err()
-            .to_string()
-            .contains("Can't use result for insert stmt"));
+        assert!(
+            res.unwrap_err()
+                .to_string()
+                .contains("Can't use result for insert stmt")
+        );
 
         taos.exec(format!("drop database {db}")).await?;
         Ok(())

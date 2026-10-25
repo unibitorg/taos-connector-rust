@@ -25,7 +25,7 @@ pub trait BlockExt: Debug + Sized {
     ///
     /// This should not be called manually, please use [get_field](#method.get_field).
     unsafe fn get_field_unchecked(&self, col: usize) -> &Field {
-        self.fields().get_unchecked(col)
+        unsafe { self.fields().get_unchecked(col) }
     }
 
     /// Get field of one column.

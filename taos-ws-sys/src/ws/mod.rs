@@ -1,12 +1,12 @@
 #![allow(unused_variables)]
 
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::ptr;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use error::{set_err_and_get_code, TaosError};
+use error::{TaosError, set_err_and_get_code};
 use faststr::FastStr;
 use query::QueryResultSet;
 use sml::SchemalessResultSet;
@@ -14,11 +14,11 @@ use taos_error::Code;
 use taos_log::QidManager;
 use taos_query::common::{Field, Precision, Ty};
 use taos_query::util::generate_req_id;
-use taos_query::{redact_dsn, TBuilder};
+use taos_query::{TBuilder, redact_dsn};
 use taos_ws::query::{ConnOption, Error};
 use taos_ws::{Offset, Taos, TaosBuilder};
 use tmq::TmqResultSet;
-use tracing::{debug, error, instrument, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::ws::config::WsTlsMode;
 
@@ -147,8 +147,8 @@ impl From<&Field> for TAOS_FIELD {
     }
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_connect(
     ip: *const c_char,
     user: *const c_char,
@@ -156,12 +156,14 @@ pub unsafe extern "C" fn taos_connect(
     db: *const c_char,
     port: u16,
 ) -> *mut TAOS {
-    taos_init();
-    match connect(ip, user, pass, db, port, ptr::null(), ptr::null()) {
-        Ok(taos) => Box::into_raw(Box::new(taos)) as _,
-        Err(err) => {
-            error!("taos_connect failed, err: {err:?}");
-            handle_connect_error(err)
+    unsafe {
+        taos_init();
+        match connect(ip, user, pass, db, port, ptr::null(), ptr::null()) {
+            Ok(taos) => Box::into_raw(Box::new(taos)) as _,
+            Err(err) => {
+                error!("taos_connect failed, err: {err:?}");
+                handle_connect_error(err)
+            }
         }
     }
 }
@@ -175,34 +177,36 @@ unsafe fn connect(
     totp_code: *const c_char,
     bearer_token: *const c_char,
 ) -> TaosResult<Taos> {
-    let addr = if !ip.is_null() {
-        let ip = CStr::from_ptr(ip).to_str()?;
-        let port = util::resolve_port(ip, port);
-        format!("{ip}:{port}")
-    } else if let Some(addr) = config::adapter_list() {
-        addr.to_string()
-    } else {
-        let host = DEFAULT_HOST;
-        let port = util::resolve_port(host, port);
-        format!("{host}:{port}")
-    };
+    unsafe {
+        let addr = if !ip.is_null() {
+            let ip = CStr::from_ptr(ip).to_str()?;
+            let port = util::resolve_port(ip, port);
+            format!("{ip}:{port}")
+        } else if let Some(addr) = config::adapter_list() {
+            addr.to_string()
+        } else {
+            let host = DEFAULT_HOST;
+            let port = util::resolve_port(host, port);
+            format!("{host}:{port}")
+        };
 
-    let user = util::c_char_to_str(user)?;
-    let pass = util::c_char_to_str(pass)?;
-    let db = util::c_char_to_str(db)?;
-    let totp_code = util::c_char_to_str(totp_code)?;
-    let bearer_token = util::c_char_to_str(bearer_token)?;
+        let user = util::c_char_to_str(user)?;
+        let pass = util::c_char_to_str(pass)?;
+        let db = util::c_char_to_str(db)?;
+        let totp_code = util::c_char_to_str(totp_code)?;
+        let bearer_token = util::c_char_to_str(bearer_token)?;
 
-    let dsn = util::DsnBuilder::new()
-        .addr(Some(&addr))
-        .user(user)
-        .pass(pass)
-        .db(db)
-        .totp_code(totp_code)
-        .bearer_token(bearer_token)
-        .build();
+        let dsn = util::DsnBuilder::new()
+            .addr(Some(&addr))
+            .user(user)
+            .pass(pass)
+            .db(db)
+            .totp_code(totp_code)
+            .bearer_token(bearer_token)
+            .build();
 
-    connect_from_dsn(&dsn)
+        connect_from_dsn(&dsn)
+    }
 }
 
 fn handle_connect_error(mut err: TaosError) -> *mut TAOS {
@@ -214,26 +218,30 @@ fn handle_connect_error(mut err: TaosError) -> *mut TAOS {
     ptr::null_mut()
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_connect_with_dsn(dsn: *const c_char) -> *mut TAOS {
-    taos_init();
-    match connect_with_dsn(dsn) {
-        Ok(taos) => Box::into_raw(Box::new(taos)) as _,
-        Err(err) => {
-            error!("taos_connect_with_dsn failed, err: {err:?}");
-            handle_connect_error(err)
+    unsafe {
+        taos_init();
+        match connect_with_dsn(dsn) {
+            Ok(taos) => Box::into_raw(Box::new(taos)) as _,
+            Err(err) => {
+                error!("taos_connect_with_dsn failed, err: {err:?}");
+                handle_connect_error(err)
+            }
         }
     }
 }
 
 unsafe fn connect_with_dsn(dsn: *const c_char) -> TaosResult<Taos> {
-    let dsn = if !dsn.is_null() {
-        CStr::from_ptr(dsn).to_str()?
-    } else {
-        DEFAULT_DSN
-    };
-    connect_from_dsn(dsn)
+    unsafe {
+        let dsn = if !dsn.is_null() {
+            CStr::from_ptr(dsn).to_str()?
+        } else {
+            DEFAULT_DSN
+        };
+        connect_from_dsn(dsn)
+    }
 }
 
 fn connect_from_dsn(dsn: &str) -> TaosResult<Taos> {
@@ -268,117 +276,123 @@ fn connect_from_dsn(dsn: &str) -> TaosResult<Taos> {
     }
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_close(taos: *mut TAOS) {
-    if taos.is_null() {
-        set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "taos is null"));
-        return;
+    unsafe {
+        if taos.is_null() {
+            set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "taos is null"));
+            return;
+        }
+        let _ = Box::from_raw(taos as *mut Taos);
     }
-    let _ = Box::from_raw(taos as *mut Taos);
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_options(option: TSDB_OPTION, arg: *const c_void, _: ...) -> c_int {
-    match option {
-        TSDB_OPTION::TSDB_OPTION_CONFIGDIR => {
-            if arg.is_null() {
-                return set_err_and_get_code(TaosError::new(
-                    Code::INVALID_PARA,
-                    "taos cfg dir is null",
-                ));
+    unsafe {
+        match option {
+            TSDB_OPTION::TSDB_OPTION_CONFIGDIR => {
+                if arg.is_null() {
+                    return set_err_and_get_code(TaosError::new(
+                        Code::INVALID_PARA,
+                        "taos cfg dir is null",
+                    ));
+                }
+                let dir = CStr::from_ptr(arg as _);
+                if let Ok(dir) = dir.to_str() {
+                    config::set_config_dir(FastStr::new(dir));
+                    0
+                } else {
+                    return set_err_and_get_code(TaosError::new(
+                        Code::INVALID_PARA,
+                        "taos cfg dir is invalid CStr",
+                    ));
+                }
             }
-            let dir = CStr::from_ptr(arg as _);
-            if let Ok(dir) = dir.to_str() {
-                config::set_config_dir(FastStr::new(dir));
-                0
-            } else {
-                return set_err_and_get_code(TaosError::new(
-                    Code::INVALID_PARA,
-                    "taos cfg dir is invalid CStr",
-                ));
+            TSDB_OPTION::TSDB_OPTION_TIMEZONE => {
+                if arg.is_null() {
+                    return set_err_and_get_code(TaosError::new(
+                        Code::INVALID_PARA,
+                        "taos timezone is null",
+                    ));
+                }
+                let tz = CStr::from_ptr(arg as _);
+                if let Ok(tz) = tz.to_str() {
+                    config::set_timezone(FastStr::new(tz));
+                    0
+                } else {
+                    return set_err_and_get_code(TaosError::new(
+                        Code::INVALID_PARA,
+                        "taos timezone is invalid CStr",
+                    ));
+                }
             }
+            _ => 0,
         }
-        TSDB_OPTION::TSDB_OPTION_TIMEZONE => {
-            if arg.is_null() {
-                return set_err_and_get_code(TaosError::new(
-                    Code::INVALID_PARA,
-                    "taos timezone is null",
-                ));
-            }
-            let tz = CStr::from_ptr(arg as _);
-            if let Ok(tz) = tz.to_str() {
-                config::set_timezone(FastStr::new(tz));
-                0
-            } else {
-                return set_err_and_get_code(TaosError::new(
-                    Code::INVALID_PARA,
-                    "taos timezone is invalid CStr",
-                ));
-            }
-        }
-        _ => 0,
     }
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_options_connection(
     taos: *mut TAOS,
     option: TSDB_OPTION_CONNECTION,
     arg: *const c_void,
 ) -> c_int {
-    if taos.is_null() {
-        error!("taos_options_connection failed, taos is null");
-        return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "taos is null"));
-    }
+    unsafe {
+        if taos.is_null() {
+            error!("taos_options_connection failed, taos is null");
+            return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "taos is null"));
+        }
 
-    let value = if !arg.is_null() {
-        Some(match CStr::from_ptr(arg as *const c_char).to_str() {
-            Ok(s) => s.to_string(),
-            Err(_) => {
-                error!("taos_options_connection failed, arg is invalid utf-8");
+        let value = if !arg.is_null() {
+            Some(match CStr::from_ptr(arg as *const c_char).to_str() {
+                Ok(s) => s.to_string(),
+                Err(_) => {
+                    error!("taos_options_connection failed, arg is invalid utf-8");
+                    return set_err_and_get_code(TaosError::new(
+                        Code::INVALID_PARA,
+                        "arg is invalid utf-8",
+                    ));
+                }
+            })
+        } else {
+            None
+        };
+
+        if option == TSDB_OPTION_CONNECTION::TSDB_OPTION_CONNECTION_CHARSET {
+            let valid = value
+                .as_deref()
+                .is_none_or(|v| v.eq_ignore_ascii_case("utf-8"));
+
+            if !valid {
+                let charset = value.unwrap();
+                error!("taos_options_connection failed, unsupported charset: {charset}",);
                 return set_err_and_get_code(TaosError::new(
                     Code::INVALID_PARA,
-                    "arg is invalid utf-8",
+                    &format!("unsupported charset: {charset}"),
                 ));
             }
-        })
-    } else {
-        None
-    };
-
-    if option == TSDB_OPTION_CONNECTION::TSDB_OPTION_CONNECTION_CHARSET {
-        let valid = value
-            .as_deref()
-            .is_none_or(|v| v.eq_ignore_ascii_case("utf-8"));
-
-        if !valid {
-            let charset = value.unwrap();
-            error!("taos_options_connection failed, unsupported charset: {charset}",);
-            return set_err_and_get_code(TaosError::new(
-                Code::INVALID_PARA,
-                &format!("unsupported charset: {charset}"),
-            ));
+            return 0;
         }
-        return 0;
-    }
 
-    let taos = &mut *(taos as *mut Taos);
-    let option = ConnOption {
-        option: option as i32,
-        value,
-    };
+        let taos = &mut *(taos as *mut Taos);
+        let option = ConnOption {
+            option: option as i32,
+            value,
+        };
 
-    match taos_query::block_in_place_or_global(taos.client().options_connection(&[option])) {
-        Ok(()) => {
-            debug!("taos_options_connection succ");
-            0
-        }
-        Err(err) => {
-            error!("taos_options_connection failed, err: {err:?}");
-            set_err_and_get_code(err.into())
+        match taos_query::block_in_place_or_global(taos.client().options_connection(&[option])) {
+            Ok(()) => {
+                debug!("taos_options_connection succ");
+                0
+            }
+            Err(err) => {
+                error!("taos_options_connection failed, err: {err:?}");
+                set_err_and_get_code(err.into())
+            }
         }
     }
 }
@@ -402,8 +416,8 @@ impl From<u64> for Qid {
     }
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub extern "C" fn taos_init() -> c_int {
     static ONCE: OnceLock<c_int> = OnceLock::new();
     *ONCE.get_or_init(|| {
@@ -419,9 +433,9 @@ fn taos_init_impl() -> Result<(), Box<dyn std::error::Error>> {
     use taos_log::layer::TaosLayer;
     use taos_log::writer::RollingFileAppender;
     use tracing_log::LogTracer;
+    use tracing_subscriber::Layer;
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::Layer;
 
     unsafe {
         let locale = util::get_system_locale();
@@ -476,44 +490,46 @@ pub struct OPTIONS {
     pub count: u16,
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_set_option(
     options: *mut OPTIONS,
     key: *const c_char,
     value: *const c_char,
 ) {
-    if options.is_null() || key.is_null() || value.is_null() {
-        let _ = set_err_and_get_code(TaosError::new(
-            Code::INVALID_PARA,
-            "options, key or value is null",
-        ));
-        return;
-    }
+    unsafe {
+        if options.is_null() || key.is_null() || value.is_null() {
+            let _ = set_err_and_get_code(TaosError::new(
+                Code::INVALID_PARA,
+                "options, key or value is null",
+            ));
+            return;
+        }
 
-    let opts = &mut *options;
-    let count = opts.count as usize;
-    if count >= opts.keys.len() {
-        warn!(
-            "taos_set_option overflow, count: {}, capacity: {}",
-            opts.count,
-            opts.keys.len()
+        let opts = &mut *options;
+        let count = opts.count as usize;
+        if count >= opts.keys.len() {
+            warn!(
+                "taos_set_option overflow, count: {}, capacity: {}",
+                opts.count,
+                opts.keys.len()
+            );
+            let _ = set_err_and_get_code(TaosError::new(
+                Code::INVALID_PARA,
+                "options capacity exceeded",
+            ));
+            return;
+        }
+
+        trace!(
+            "taos_set_option insert, index: {count}, key: {}",
+            CStr::from_ptr(key).to_string_lossy(),
         );
-        let _ = set_err_and_get_code(TaosError::new(
-            Code::INVALID_PARA,
-            "options capacity exceeded",
-        ));
-        return;
+
+        opts.keys[opts.count as usize] = key;
+        opts.values[opts.count as usize] = value;
+        opts.count += 1;
     }
-
-    trace!(
-        "taos_set_option insert, index: {count}, key: {}",
-        CStr::from_ptr(key).to_string_lossy(),
-    );
-
-    opts.keys[opts.count as usize] = key;
-    opts.values[opts.count as usize] = value;
-    opts.count += 1;
 }
 
 const IP: &str = "ip";
@@ -533,76 +549,80 @@ const WS_TLS_VERSION: &str = "wsTlsVersion";
 const WS_TLS_CA: &str = "wsTlsCa";
 const TOKEN: &str = "token";
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_connect_with(options: *const OPTIONS) -> *mut TAOS {
-    taos_init();
-    match connect_with(options) {
-        Ok(taos) => Box::into_raw(Box::new(taos)) as _,
-        Err(err) => {
-            error!("taos_connect_with failed, err: {err:?}");
-            handle_connect_error(err)
+    unsafe {
+        taos_init();
+        match connect_with(options) {
+            Ok(taos) => Box::into_raw(Box::new(taos)) as _,
+            Err(err) => {
+                error!("taos_connect_with failed, err: {err:?}");
+                handle_connect_error(err)
+            }
         }
     }
 }
 
 unsafe fn connect_with(options: *const OPTIONS) -> TaosResult<Taos> {
-    let dsn = build_dsn_from_options(options)?;
-    connect_from_dsn(&dsn)
+    unsafe {
+        let dsn = build_dsn_from_options(options)?;
+        connect_from_dsn(&dsn)
+    }
 }
 
 unsafe fn build_dsn_from_options(options: *const OPTIONS) -> TaosResult<String> {
-    if options.is_null() {
-        let dsn = util::DsnBuilder::new().build();
-        debug!(
-            "build_dsn_from_options, options is null, use default dsn: {}",
-            redact_dsn(&dsn)
-        );
-        return Ok(dsn);
-    }
-
-    let opts = &*options;
-    let count = opts.count as usize;
-    if count > opts.keys.len() || count > opts.values.len() {
-        error!(
-            "build_dsn_from_options, invalid count: {count}, exceeds arrays len: {}",
-            opts.keys.len()
-        );
-        return Err(TaosError::new(
-            Code::INVALID_PARA,
-            "options count out of range",
-        ));
-    }
-
-    let mut map = HashMap::with_capacity(count);
-    for i in 0..count {
-        if opts.keys[i].is_null() || opts.values[i].is_null() {
-            warn!("build_dsn_from_options, index {i} has null key/value, skip");
-            continue;
+    unsafe {
+        if options.is_null() {
+            let dsn = util::DsnBuilder::new().build();
+            debug!(
+                "build_dsn_from_options, options is null, use default dsn: {}",
+                redact_dsn(&dsn)
+            );
+            return Ok(dsn);
         }
-        let key = CStr::from_ptr(opts.keys[i]).to_str()?;
-        let value = CStr::from_ptr(opts.values[i]).to_str()?;
-        if let Some(value) = map.insert(key, value) {
-            debug!("build_dsn_from_options, duplicate key: {key}, overwrite previous value");
+
+        let opts = &*options;
+        let count = opts.count as usize;
+        if count > opts.keys.len() || count > opts.values.len() {
+            error!(
+                "build_dsn_from_options, invalid count: {count}, exceeds arrays len: {}",
+                opts.keys.len()
+            );
+            return Err(TaosError::new(
+                Code::INVALID_PARA,
+                "options count out of range",
+            ));
         }
-    }
-    trace!("build_dsn_from_options, raw options: {:?}", SecretMap(&map));
 
-    let user = map.remove(USER).unwrap_or(DEFAULT_USER);
-    let pass = map.remove(PASS).unwrap_or(DEFAULT_PASS);
-    let db = map.remove(DB).unwrap_or(DEFAULT_DB);
-
-    let port = map
-        .remove(PORT)
-        .map_or(0, |s| s.parse::<u16>().unwrap_or(0));
-
-    let addr = match map.remove(ADAPTER_LIST) {
-        Some(addr) => {
-            debug!("build_dsn_from_options, use adapterList option: {addr}");
-            addr.to_string()
+        let mut map = HashMap::with_capacity(count);
+        for i in 0..count {
+            if opts.keys[i].is_null() || opts.values[i].is_null() {
+                warn!("build_dsn_from_options, index {i} has null key/value, skip");
+                continue;
+            }
+            let key = CStr::from_ptr(opts.keys[i]).to_str()?;
+            let value = CStr::from_ptr(opts.values[i]).to_str()?;
+            if let Some(value) = map.insert(key, value) {
+                debug!("build_dsn_from_options, duplicate key: {key}, overwrite previous value");
+            }
         }
-        None => {
-            match map.remove(IP) {
+        trace!("build_dsn_from_options, raw options: {:?}", SecretMap(&map));
+
+        let user = map.remove(USER).unwrap_or(DEFAULT_USER);
+        let pass = map.remove(PASS).unwrap_or(DEFAULT_PASS);
+        let db = map.remove(DB).unwrap_or(DEFAULT_DB);
+
+        let port = map
+            .remove(PORT)
+            .map_or(0, |s| s.parse::<u16>().unwrap_or(0));
+
+        let addr = match map.remove(ADAPTER_LIST) {
+            Some(addr) => {
+                debug!("build_dsn_from_options, use adapterList option: {addr}");
+                addr.to_string()
+            }
+            None => match map.remove(IP) {
                 Some(host) => {
                     let port = util::resolve_port(host, port);
                     let addr = format!("{host}:{port}");
@@ -618,89 +638,91 @@ unsafe fn build_dsn_from_options(options: *const OPTIONS) -> TaosResult<String> 
                         let host = DEFAULT_HOST;
                         let port = util::resolve_port(host, port);
                         let addr = format!("{host}:{port}");
-                        debug!("build_dsn_from_options, fallback default host: {host}, address: {addr}");
+                        debug!(
+                            "build_dsn_from_options, fallback default host: {host}, address: {addr}"
+                        );
                         addr
                     }
                 },
-            }
+            },
+        };
+
+        let conn_retries = config::conn_retries().to_string();
+        let retry_backoff_ms = config::retry_backoff_ms().to_string();
+        let retry_backoff_max_ms = config::retry_backoff_max_ms().to_string();
+
+        if !map.contains_key(CONN_RETRIES) {
+            map.insert(CONN_RETRIES, &conn_retries);
         }
-    };
-
-    let conn_retries = config::conn_retries().to_string();
-    let retry_backoff_ms = config::retry_backoff_ms().to_string();
-    let retry_backoff_max_ms = config::retry_backoff_max_ms().to_string();
-
-    if !map.contains_key(CONN_RETRIES) {
-        map.insert(CONN_RETRIES, &conn_retries);
-    }
-    if !map.contains_key(RETRY_BACKOFF_MS) {
-        map.insert(RETRY_BACKOFF_MS, &retry_backoff_ms);
-    }
-    if !map.contains_key(RETRY_BACKOFF_MAX_MS) {
-        map.insert(RETRY_BACKOFF_MAX_MS, &retry_backoff_max_ms);
-    }
-
-    if config::adapter_ha() && !map.contains_key(ADAPTER_HA) {
-        map.insert(ADAPTER_HA, "true");
-    }
-
-    let compression = match map.remove(COMPRESSION) {
-        Some(s) => match s.trim() {
-            "1" => "true".to_string(),
-            "0" => "false".to_string(),
-            _ => {
-                return Err(TaosError::new(
-                    Code::INVALID_PARA,
-                    &format!("invalid value for {COMPRESSION}: {s}"),
-                ))
-            }
-        },
-        None => config::compression().to_string(),
-    };
-    map.insert(COMPRESSION, &compression);
-
-    let ws_tls_mode = map
-        .remove(WS_TLS_MODE)
-        .map(|s| s.parse::<WsTlsMode>())
-        .transpose()?
-        .unwrap_or(config::ws_tls_mode());
-
-    let protocol = match ws_tls_mode {
-        WsTlsMode::Disabled => "ws",
-        _ => "wss",
-    };
-
-    if ws_tls_mode == WsTlsMode::VerifyCa {
-        map.insert("tls_mode", "verify_ca");
-    } else if ws_tls_mode == WsTlsMode::VerifyIdentity {
-        map.insert("tls_mode", "verify_identity");
-    };
-
-    let tls_version = map
-        .remove(WS_TLS_VERSION)
-        .map_or_else(|| config::ws_tls_version().to_string(), |s| s.to_string());
-    map.insert("tls_version", &tls_version);
-
-    let tls_ca = match map.remove(WS_TLS_CA) {
-        Some(ca) => Some(ca.to_string()),
-        None => config::ws_tls_ca().map(|ca| ca.to_string()),
-    };
-    if let Some(ca) = &tls_ca {
-        map.insert("tls_ca", ca);
-    }
-
-    let mut params = String::with_capacity(64);
-    for (i, (&key, &value)) in map.iter().enumerate() {
-        let key = util::camel_to_snake(key);
-        if i > 0 {
-            params.push('&');
+        if !map.contains_key(RETRY_BACKOFF_MS) {
+            map.insert(RETRY_BACKOFF_MS, &retry_backoff_ms);
         }
-        params.push_str(&key);
-        params.push('=');
-        params.push_str(value);
-    }
+        if !map.contains_key(RETRY_BACKOFF_MAX_MS) {
+            map.insert(RETRY_BACKOFF_MAX_MS, &retry_backoff_max_ms);
+        }
 
-    Ok(format!("{protocol}://{user}:{pass}@{addr}/{db}?{params}"))
+        if config::adapter_ha() && !map.contains_key(ADAPTER_HA) {
+            map.insert(ADAPTER_HA, "true");
+        }
+
+        let compression = match map.remove(COMPRESSION) {
+            Some(s) => match s.trim() {
+                "1" => "true".to_string(),
+                "0" => "false".to_string(),
+                _ => {
+                    return Err(TaosError::new(
+                        Code::INVALID_PARA,
+                        &format!("invalid value for {COMPRESSION}: {s}"),
+                    ));
+                }
+            },
+            None => config::compression().to_string(),
+        };
+        map.insert(COMPRESSION, &compression);
+
+        let ws_tls_mode = map
+            .remove(WS_TLS_MODE)
+            .map(|s| s.parse::<WsTlsMode>())
+            .transpose()?
+            .unwrap_or(config::ws_tls_mode());
+
+        let protocol = match ws_tls_mode {
+            WsTlsMode::Disabled => "ws",
+            _ => "wss",
+        };
+
+        if ws_tls_mode == WsTlsMode::VerifyCa {
+            map.insert("tls_mode", "verify_ca");
+        } else if ws_tls_mode == WsTlsMode::VerifyIdentity {
+            map.insert("tls_mode", "verify_identity");
+        };
+
+        let tls_version = map
+            .remove(WS_TLS_VERSION)
+            .map_or_else(|| config::ws_tls_version().to_string(), |s| s.to_string());
+        map.insert("tls_version", &tls_version);
+
+        let tls_ca = match map.remove(WS_TLS_CA) {
+            Some(ca) => Some(ca.to_string()),
+            None => config::ws_tls_ca().map(|ca| ca.to_string()),
+        };
+        if let Some(ca) = &tls_ca {
+            map.insert("tls_ca", ca);
+        }
+
+        let mut params = String::with_capacity(64);
+        for (i, (&key, &value)) in map.iter().enumerate() {
+            let key = util::camel_to_snake(key);
+            if i > 0 {
+                params.push('&');
+            }
+            params.push_str(&key);
+            params.push('=');
+            params.push_str(value);
+        }
+
+        Ok(format!("{protocol}://{user}:{pass}@{addr}/{db}?{params}"))
+    }
 }
 
 struct SecretMap<'a>(&'a HashMap<&'a str, &'a str>);
@@ -719,8 +741,8 @@ impl<'a> std::fmt::Debug for SecretMap<'a> {
     }
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_connect_totp(
     ip: *const c_char,
     user: *const c_char,
@@ -729,18 +751,20 @@ pub unsafe extern "C" fn taos_connect_totp(
     db: *const c_char,
     port: u16,
 ) -> *mut TAOS {
-    taos_init();
-    match connect(ip, user, pass, db, port, totp, ptr::null()) {
-        Ok(taos) => Box::into_raw(Box::new(taos)) as _,
-        Err(err) => {
-            error!("taos_connect_totp failed, err: {err:?}");
-            handle_connect_error(err)
+    unsafe {
+        taos_init();
+        match connect(ip, user, pass, db, port, totp, ptr::null()) {
+            Ok(taos) => Box::into_raw(Box::new(taos)) as _,
+            Err(err) => {
+                error!("taos_connect_totp failed, err: {err:?}");
+                handle_connect_error(err)
+            }
         }
     }
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_connect_test(
     ip: *const c_char,
     user: *const c_char,
@@ -749,28 +773,32 @@ pub unsafe extern "C" fn taos_connect_test(
     db: *const c_char,
     port: u16,
 ) -> c_int {
-    let taos = taos_connect_totp(ip, user, pass, totp, db, port);
-    if taos.is_null() {
-        return error::errno();
+    unsafe {
+        let taos = taos_connect_totp(ip, user, pass, totp, db, port);
+        if taos.is_null() {
+            return error::errno();
+        }
+        taos_close(taos);
+        0
     }
-    taos_close(taos);
-    0
 }
 
-#[no_mangle]
-#[instrument(level = "debug", ret)]
+#[unsafe(no_mangle)]
+#[tracing::instrument(level = "debug", ret)]
 pub unsafe extern "C" fn taos_connect_token(
     ip: *const c_char,
     token: *const c_char,
     db: *const c_char,
     port: u16,
 ) -> *mut TAOS {
-    taos_init();
-    match connect(ip, ptr::null(), ptr::null(), db, port, ptr::null(), token) {
-        Ok(taos) => Box::into_raw(Box::new(taos)) as _,
-        Err(err) => {
-            error!("taos_connect_token failed, err: {err:?}");
-            handle_connect_error(err)
+    unsafe {
+        taos_init();
+        match connect(ip, ptr::null(), ptr::null(), db, port, ptr::null(), token) {
+            Ok(taos) => Box::into_raw(Box::new(taos)) as _,
+            Err(err) => {
+                error!("taos_connect_token failed, err: {err:?}");
+                handle_connect_error(err)
+            }
         }
     }
 }
@@ -947,34 +975,42 @@ impl ResultSetOperations for ResultSet {
         ptr: *mut *mut c_void,
         rows: *mut i32,
     ) -> Result<(), Error> {
-        match self {
-            ResultSet::Query(rs) => rs.fetch_raw_block(ptr, rows),
-            ResultSet::Schemaless(rs) => rs.fetch_raw_block(ptr, rows),
-            ResultSet::Tmq(rs) => rs.fetch_raw_block(ptr, rows),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.fetch_raw_block(ptr, rows),
+                ResultSet::Schemaless(rs) => rs.fetch_raw_block(ptr, rows),
+                ResultSet::Tmq(rs) => rs.fetch_raw_block(ptr, rows),
+            }
         }
     }
 
     unsafe fn fetch_block(&mut self, rows: *mut TAOS_ROW, num: *mut c_int) -> Result<(), Error> {
-        match self {
-            ResultSet::Query(rs) => rs.fetch_block(rows, num),
-            ResultSet::Schemaless(rs) => rs.fetch_block(rows, num),
-            ResultSet::Tmq(rs) => rs.fetch_block(rows, num),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.fetch_block(rows, num),
+                ResultSet::Schemaless(rs) => rs.fetch_block(rows, num),
+                ResultSet::Tmq(rs) => rs.fetch_block(rows, num),
+            }
         }
     }
 
     unsafe fn fetch_row(&mut self) -> Result<TAOS_ROW, Error> {
-        match self {
-            ResultSet::Query(rs) => rs.fetch_row(),
-            ResultSet::Schemaless(rs) => rs.fetch_row(),
-            ResultSet::Tmq(rs) => rs.fetch_row(),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.fetch_row(),
+                ResultSet::Schemaless(rs) => rs.fetch_row(),
+                ResultSet::Tmq(rs) => rs.fetch_row(),
+            }
         }
     }
 
     unsafe fn get_raw_value(&mut self, row: usize, col: usize) -> (Ty, u32, *const c_void) {
-        match self {
-            ResultSet::Query(rs) => rs.get_raw_value(row, col),
-            ResultSet::Schemaless(rs) => rs.get_raw_value(row, col),
-            ResultSet::Tmq(rs) => rs.get_raw_value(row, col),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.get_raw_value(row, col),
+                ResultSet::Schemaless(rs) => rs.get_raw_value(row, col),
+                ResultSet::Tmq(rs) => rs.get_raw_value(row, col),
+            }
         }
     }
 
@@ -1000,10 +1036,12 @@ impl ResultSetOperations for ResultSet {
         result: *mut bool,
         rows: *mut c_int,
     ) -> Result<(), TaosError> {
-        match self {
-            ResultSet::Query(rs) => rs.is_null_by_column(column_index, result, rows),
-            ResultSet::Schemaless(rs) => rs.is_null_by_column(column_index, result, rows),
-            ResultSet::Tmq(rs) => rs.is_null_by_column(column_index, result, rows),
+        unsafe {
+            match self {
+                ResultSet::Query(rs) => rs.is_null_by_column(column_index, result, rows),
+                ResultSet::Schemaless(rs) => rs.is_null_by_column(column_index, result, rows),
+                ResultSet::Tmq(rs) => rs.is_null_by_column(column_index, result, rows),
+            }
         }
     }
 

@@ -1,12 +1,12 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 
 #[cfg(windows)]
 use chrono::Offset;
-use libc::{setlocale, LC_CTYPE};
+use libc::{LC_CTYPE, setlocale};
 #[cfg(windows)]
 use tracing::warn;
 
-use crate::ws::{self, config, TaosResult};
+use crate::ws::{self, TaosResult, config};
 
 pub fn get_system_locale() -> String {
     #[cfg(target_os = "windows")]
@@ -261,10 +261,12 @@ impl<'a> DsnBuilder<'a> {
 }
 
 pub unsafe fn c_char_to_str<'a>(ptr: *const c_char) -> TaosResult<Option<&'a str>> {
-    if !ptr.is_null() {
-        CStr::from_ptr(ptr).to_str().map(Some).map_err(Into::into)
-    } else {
-        Ok(None)
+    unsafe {
+        if !ptr.is_null() {
+            CStr::from_ptr(ptr).to_str().map(Some).map_err(Into::into)
+        } else {
+            Ok(None)
+        }
     }
 }
 

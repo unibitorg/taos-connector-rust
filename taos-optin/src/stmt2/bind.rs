@@ -1,18 +1,18 @@
 use std::{
-    ffi::{c_char, CString},
+    ffi::{CString, c_char},
     ptr, slice,
 };
 
 use bytes::Bytes;
 use derive_more::Deref;
 use taos_query::{
+    RawError, RawResult,
     common::{
+        ColumnView, Ty,
         decimal::Decimal,
         itypes::{IValue, IsValue},
-        ColumnView, Ty,
     },
     stmt2::Stmt2BindParam,
-    RawError, RawResult,
 };
 
 use crate::types::{BindFrom, TaosStmt2Bind, TaosStmt2Bindv};

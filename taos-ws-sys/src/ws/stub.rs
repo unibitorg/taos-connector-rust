@@ -55,10 +55,10 @@ pub enum TSDB_CONNECTION_INFO {
     TSDB_MAX_CONNECTION_INFO,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_cleanup() {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_connect_auth(
     ip: *const c_char,
     user: *const c_char,
@@ -69,13 +69,13 @@ pub extern "C" fn taos_connect_auth(
     ptr::null_mut()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_kill_query(taos: *mut TAOS) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_reset_current_db(taos: *mut TAOS) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_get_db_route_info(
     taos: *mut TAOS,
@@ -85,7 +85,7 @@ pub extern "C" fn taos_get_db_route_info(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_get_table_vgId(
     taos: *mut TAOS,
@@ -96,7 +96,7 @@ pub extern "C" fn taos_get_table_vgId(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_get_tables_vgId(
     taos: *mut TAOS,
@@ -108,17 +108,17 @@ pub extern "C" fn taos_get_tables_vgId(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_load_table_info(taos: *mut TAOS, tableNameList: *const c_char) -> c_int {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_set_hb_quit(quitByKill: i8) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_set_notify_cb(
     taos: *mut TAOS,
     fp: __taos_notify_fn_t,
@@ -128,12 +128,12 @@ pub extern "C" fn taos_set_notify_cb(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_set_conn_mode(taos: *mut TAOS, mode: c_int, value: c_int) -> c_int {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn tmq_get_connect(tmq: *mut tmq_t) -> *mut TAOS {
     ptr::null_mut()
 }
@@ -162,7 +162,7 @@ pub struct setConfRet {
     pub retMsg: [c_char; RET_MSG_LENGTH],
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_set_config(config: *const c_char) -> setConfRet {
     setConfRet {
         retCode: SET_CONF_RET_CODE::SET_CONF_RET_SUCC,
@@ -179,7 +179,7 @@ pub enum TAOS_FIELD_T {
     TAOS_FIELD_TBNAME = 4,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_fetch_whitelist_a(
     taos: *mut TAOS,
     fp: __taos_async_whitelist_fn_t,
@@ -187,7 +187,7 @@ pub extern "C" fn taos_fetch_whitelist_a(
 ) {
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_fetch_whitelist_dual_stack_a(
     taos: *mut TAOS,
     fp: __taos_async_whitelist_dual_stack_fn_t,
@@ -195,17 +195,17 @@ pub extern "C" fn taos_fetch_whitelist_dual_stack_a(
 ) {
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn tmq_get_raw(res: *mut TAOS_RES, raw: *mut tmq_raw_data) -> i32 {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn tmq_write_raw(taos: *mut TAOS, raw: tmq_raw_data) -> i32 {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_write_raw_block(
     taos: *mut TAOS,
@@ -216,7 +216,7 @@ pub extern "C" fn taos_write_raw_block(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_write_raw_block_with_reqid(
     taos: *mut TAOS,
@@ -228,7 +228,7 @@ pub extern "C" fn taos_write_raw_block_with_reqid(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_write_raw_block_with_fields(
     taos: *mut TAOS,
@@ -241,7 +241,7 @@ pub extern "C" fn taos_write_raw_block_with_fields(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_write_raw_block_with_fields_with_reqid(
     taos: *mut TAOS,
@@ -255,29 +255,29 @@ pub extern "C" fn taos_write_raw_block_with_fields_with_reqid(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn tmq_free_raw(raw: tmq_raw_data) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn tmq_get_json_meta(res: *mut TAOS_RES) -> *const c_char {
     ptr::null()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn tmq_free_json_meta(jsonMeta: *mut c_char) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn getBuildInfo() -> *const c_char {
     ptr::null()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn taos_write_crashinfo(signum: c_int, sigInfo: *mut c_void, context: *mut c_void) {}
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_fetch_ip_whitelist_a(
     taos: *mut TAOS,
     fp: __taos_async_ip_whitelist_fn_t,
@@ -285,7 +285,7 @@ pub extern "C" fn taos_fetch_ip_whitelist_a(
 ) {
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_fetch_datetime_whitelist_a(
     taos: *mut TAOS,
     fp: __taos_async_datetime_whitelist_fn_t,
@@ -293,12 +293,12 @@ pub extern "C" fn taos_fetch_datetime_whitelist_a(
 ) {
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_connect_is_alive(taos: *mut TAOS) -> i32 {
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_get_connection_info(
     taos: *mut TAOS,
     info: TSDB_CONNECTION_INFO,
@@ -308,7 +308,7 @@ pub extern "C" fn taos_get_connection_info(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn taos_validate_connection(
     taos: *mut TAOS,
     str: *mut c_char,

@@ -50,42 +50,50 @@ impl JsonView {
 
     /// Unsafe version for [methods.is_null]
     pub unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.offsets.get_unchecked(row) < 0
+        unsafe { self.offsets.get_unchecked(row) < 0 }
     }
 
     pub unsafe fn get_unchecked(&self, row: usize) -> Option<&InlineJson> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            Some(InlineJson::<u16>::from_ptr(
-                self.data.as_ptr().offset(offset as isize),
-            ))
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                Some(InlineJson::<u16>::from_ptr(
+                    self.data.as_ptr().offset(offset as isize),
+                ))
+            } else {
+                None
+            }
         }
     }
 
     pub unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        // todo: use simd_json::BorrowedValue as Json.
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::Json), |s| {
-                BorrowedValue::Json(s.as_bytes().into())
-            })
+        unsafe {
+            // todo: use simd_json::BorrowedValue as Json.
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::Json), |s| {
+                    BorrowedValue::Json(s.as_bytes().into())
+                })
+        }
     }
 
     pub unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        match self.get_unchecked(row) {
-            Some(json) => (Ty::Json, json.len() as _, json.as_ptr() as _),
-            None => (Ty::Json, 0, std::ptr::null()),
+        unsafe {
+            match self.get_unchecked(row) {
+                Some(json) => (Ty::Json, json.len() as _, json.as_ptr() as _),
+                None => (Ty::Json, 0, std::ptr::null()),
+            }
         }
     }
 
     #[inline]
     pub unsafe fn get_length_unchecked(&self, row: usize) -> Option<usize> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            Some(InlineJson::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                Some(InlineJson::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
+            } else {
+                None
+            }
         }
     }
 
@@ -241,7 +249,17 @@ impl ExactSizeIterator for VarCharIter<'_> {
 
 #[test]
 fn test_slice() {
-    let data = [None, Some(""), Some("abc"), Some("中文"), None, None, Some("a loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooog string")];
+    let data = [
+        None,
+        Some(""),
+        Some("abc"),
+        Some("中文"),
+        None,
+        None,
+        Some(
+            "a loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooog string",
+        ),
+    ];
     let view = JsonView::from_iter::<&str, _, _, _>(data);
     let slice = view.slice(0..0);
     assert!(slice.is_none());

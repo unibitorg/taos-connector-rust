@@ -107,7 +107,7 @@ impl BoolView {
 
     /// Unsafe version for [methods.is_null]
     pub unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.nulls.is_null_unchecked(row)
+        unsafe { self.nulls.is_null_unchecked(row) }
     }
 
     /// Get nullable value at `row` index.
@@ -121,40 +121,48 @@ impl BoolView {
 
     #[inline(always)]
     unsafe fn get_raw_at(&self, index: usize) -> *const bool {
-        self.data.as_ptr().add(index) as _
+        unsafe { self.data.as_ptr().add(index) as _ }
     }
 
     /// Get nullable value at `row` index.
     pub unsafe fn get_unchecked(&self, row: usize) -> Option<bool> {
-        if self.nulls.is_null_unchecked(row) {
-            None
-        } else {
-            Some(*self.get_raw_at(row))
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                None
+            } else {
+                Some(*self.get_raw_at(row))
+            }
         }
     }
 
     pub unsafe fn get_ref_unchecked(&self, row: usize) -> Option<*const bool> {
-        if self.nulls.is_null_unchecked(row) {
-            None
-        } else {
-            Some(self.get_raw_at(row))
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                None
+            } else {
+                Some(self.get_raw_at(row))
+            }
         }
     }
 
     pub unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::Bool), BorrowedValue::Bool)
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::Bool), BorrowedValue::Bool)
+        }
     }
 
     pub unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        if self.nulls.is_null_unchecked(row) {
-            (Ty::Bool, std::mem::size_of::<bool>() as _, std::ptr::null())
-        } else {
-            (
-                Ty::Bool,
-                std::mem::size_of::<bool>() as _,
-                self.get_raw_at(row) as _,
-            )
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                (Ty::Bool, std::mem::size_of::<bool>() as _, std::ptr::null())
+            } else {
+                (
+                    Ty::Bool,
+                    std::mem::size_of::<bool>() as _,
+                    self.get_raw_at(row) as _,
+                )
+            }
         }
     }
 
@@ -268,11 +276,13 @@ mod tests {
         let chain = &view + slice.as_ref().unwrap();
         dbg!(&chain);
         assert!(chain.len() == 7);
-        assert!(chain
-            .slice(0..4)
-            .unwrap()
-            .iter()
-            .zip(view.iter())
-            .all(|(l, r)| dbg!(l) == r));
+        assert!(
+            chain
+                .slice(0..4)
+                .unwrap()
+                .iter()
+                .zip(view.iter())
+                .all(|(l, r)| dbg!(l) == r)
+        );
     }
 }

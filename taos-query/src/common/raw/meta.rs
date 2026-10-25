@@ -751,18 +751,24 @@ mod tests {
 
     #[test]
     fn test_json_meta_compress() {
-        let json ="{\"type\":\"create\",\"tableType\":\"normal\",\"tableName\":\"t3\",\"columns\":[{\"name\":\"ts\",\"type\":9,\"isPrimarykey\":false,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"obj_id\",\"type\":5,\"isPrimarykey\":true,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data1\",\"type\":6,\"isPrimarykey\":false,\"encode\":\"delta-d\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data2\",\"type\":4,\"isPrimarykey\":false,\"encode\":\"simple8b\",\"compress\":\"lz4\",\"level\":\"high\"}],\"tags\":[]}";
+        let json = "{\"type\":\"create\",\"tableType\":\"normal\",\"tableName\":\"t3\",\"columns\":[{\"name\":\"ts\",\"type\":9,\"isPrimarykey\":false,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"obj_id\",\"type\":5,\"isPrimarykey\":true,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data1\",\"type\":6,\"isPrimarykey\":false,\"encode\":\"delta-d\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data2\",\"type\":4,\"isPrimarykey\":false,\"encode\":\"simple8b\",\"compress\":\"lz4\",\"level\":\"high\"}],\"tags\":[]}";
         let meta = serde_json::from_str::<MetaUnit>(json).unwrap();
         println!("{}", meta);
-        assert_eq!(meta.to_string(), "CREATE TABLE IF NOT EXISTS `t3`(`ts` TIMESTAMP ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `obj_id` BIGINT ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `data1` FLOAT ENCODE 'delta-d' COMPRESS 'lz4' LEVEL 'medium', `data2` INT ENCODE 'simple8b' COMPRESS 'lz4' LEVEL 'high')");
+        assert_eq!(
+            meta.to_string(),
+            "CREATE TABLE IF NOT EXISTS `t3`(`ts` TIMESTAMP ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `obj_id` BIGINT ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `data1` FLOAT ENCODE 'delta-d' COMPRESS 'lz4' LEVEL 'medium', `data2` INT ENCODE 'simple8b' COMPRESS 'lz4' LEVEL 'high')"
+        );
     }
 
     #[test]
     fn test_json_meta_plural() {
-        let json ="{\"tmq_meta_version\":\"1.0\",\"metas\":[{\"type\":\"create\",\"tableType\":\"normal\",\"tableName\":\"t3\",\"columns\":[{\"name\":\"ts\",\"type\":9,\"isPrimarykey\":false,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"obj_id\",\"type\":5,\"isPrimarykey\":true,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data1\",\"type\":6,\"isPrimarykey\":false,\"encode\":\"delta-d\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data2\",\"type\":4,\"isPrimarykey\":false,\"encode\":\"simple8b\",\"compress\":\"lz4\",\"level\":\"high\"}],\"tags\":[]}] }";
+        let json = "{\"tmq_meta_version\":\"1.0\",\"metas\":[{\"type\":\"create\",\"tableType\":\"normal\",\"tableName\":\"t3\",\"columns\":[{\"name\":\"ts\",\"type\":9,\"isPrimarykey\":false,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"obj_id\",\"type\":5,\"isPrimarykey\":true,\"encode\":\"delta-i\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data1\",\"type\":6,\"isPrimarykey\":false,\"encode\":\"delta-d\",\"compress\":\"lz4\",\"level\":\"medium\"},{\"name\":\"data2\",\"type\":4,\"isPrimarykey\":false,\"encode\":\"simple8b\",\"compress\":\"lz4\",\"level\":\"high\"}],\"tags\":[]}] }";
         let meta = serde_json::from_str::<JsonMeta>(json).unwrap();
         println!("{:?}", meta);
-        assert_eq!(meta.iter().map(ToString::to_string).next().unwrap(), "CREATE TABLE IF NOT EXISTS `t3`(`ts` TIMESTAMP ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `obj_id` BIGINT ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `data1` FLOAT ENCODE 'delta-d' COMPRESS 'lz4' LEVEL 'medium', `data2` INT ENCODE 'simple8b' COMPRESS 'lz4' LEVEL 'high')");
+        assert_eq!(
+            meta.iter().map(ToString::to_string).next().unwrap(),
+            "CREATE TABLE IF NOT EXISTS `t3`(`ts` TIMESTAMP ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `obj_id` BIGINT ENCODE 'delta-i' COMPRESS 'lz4' LEVEL 'medium', `data1` FLOAT ENCODE 'delta-d' COMPRESS 'lz4' LEVEL 'medium', `data2` INT ENCODE 'simple8b' COMPRESS 'lz4' LEVEL 'high')"
+        );
     }
 
     #[test]

@@ -3,14 +3,14 @@ use std::thread;
 
 use crossbeam::sync::WaitGroup;
 use rand::Rng;
+use taos_log::QidManager;
 use taos_log::layer::TaosLayer;
 use taos_log::writer::RollingFileAppender;
-use taos_log::QidManager;
 use tracing::level_filters::LevelFilter;
 use tracing_log::LogTracer;
+use tracing_subscriber::Layer;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::Layer;
 
 #[derive(Clone)]
 struct Qid(u64);

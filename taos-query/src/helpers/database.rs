@@ -98,13 +98,13 @@ impl FromStr for DatabaseProperties {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // CREATE DATABASE log REPLICA 1 QUORUM 1 DAYS 10 KEEP 30 CACHE 1 BLOCKS 3 MINROWS 100 MAXROWS 4096 WAL 1 FSYNC 3000 COMP 2 CACHELAST 0 PRECISION 'us' UPDATE 0
+        use nom::IResult;
         use nom::branch::alt;
         use nom::bytes::complete::tag;
         use nom::character::complete::*;
         use nom::character::streaming;
         use nom::multi::many0;
         use nom::sequence::*;
-        use nom::IResult;
 
         let mut repr = Self::new();
 

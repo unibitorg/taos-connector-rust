@@ -9,7 +9,7 @@ mod test;
 /// # use taos_macros::c_cfg;
 ///
 /// #[c_cfg(feature = "ft1")]
-/// extern "C" {
+/// unsafe extern "C" {
 ///     pub fn raw_c_fn(arg1: *mut std::os::raw::c_void) -> std::os::raw::c_int;
 /// }
 /// ```
@@ -18,11 +18,11 @@ mod test;
 ///
 /// ```rust
 /// #[cfg(feature = "ft1")]
-/// extern "C" {
+/// unsafe extern "C" {
 ///     pub fn raw_c_fn(arg1: *mut std::os::raw::c_void) -> std::os::raw::c_int;
 /// }
 /// #[cfg(not(feature = "ft1"))]
-/// #[no_mangle]
+/// #[unsafe(no_mangle)]
 /// pub extern "C" fn raw_c_fn(arg1: *mut std::os::raw::c_void) -> std::os::raw::c_int {
 ///     panic!("C function raw_c_fn is not supported in this build");
 /// }

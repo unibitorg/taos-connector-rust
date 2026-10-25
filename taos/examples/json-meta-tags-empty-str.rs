@@ -4,10 +4,13 @@ use taos::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    std::env::set_var(
-        "RUST_LOG",
-        "trace,tungstenite=error,tokio_tungstenite=error",
-    );
+    // TODO: Audit that the environment access only happens in single-threaded code.
+    unsafe {
+        std::env::set_var(
+            "RUST_LOG",
+            "trace,tungstenite=error,tokio_tungstenite=error",
+        )
+    };
     pretty_env_logger::init();
     let dsn = "taos+ws://localhost:6041";
     let builder = TaosBuilder::from_dsn(dsn)?;

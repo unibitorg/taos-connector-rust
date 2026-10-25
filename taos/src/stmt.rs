@@ -1,5 +1,5 @@
-use taos_query::prelude::{ColumnView, Value};
 use taos_query::RawResult;
+use taos_query::prelude::{ColumnView, Value};
 use taos_ws::Stmt as WsStmt;
 
 use crate::sys::Stmt as NativeStmt;
@@ -215,8 +215,8 @@ mod tests {
 
     use bytes::Bytes;
     use serde::Deserialize;
-    use taos_query::util::hex::*;
     use taos_query::RawResult;
+    use taos_query::util::hex::*;
 
     #[test]
     fn test_bindable_sync() -> RawResult<()> {
@@ -505,10 +505,9 @@ mod tests {
             ColumnView::from_varchar(vec!["ABC"]),
             ColumnView::from_nchar(vec!["涛思数据"]),
             ColumnView::from_bytes(vec![hex_string_to_bytes("123456").to_vec()]),
-            ColumnView::from_geobytes(vec![hex_string_to_bytes(
-                "0101000000000000000000F03F0000000000000040",
-            )
-            .to_vec()]),
+            ColumnView::from_geobytes(vec![
+                hex_string_to_bytes("0101000000000000000000F03F0000000000000040").to_vec(),
+            ]),
         ];
         let rows = stmt
             .bind(&params)

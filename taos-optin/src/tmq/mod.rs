@@ -17,9 +17,9 @@ use tokio::sync::oneshot;
 use tokio::{self, time};
 use tracing::instrument;
 
+use crate::TaosBuilder;
 use crate::raw::{ApiEntry, RawRes};
 use crate::types::tmq_res_t;
-use crate::TaosBuilder;
 
 mod raw;
 
@@ -150,7 +150,9 @@ impl taos_query::TBuilder for TmqBuilder {
                     expired.trim() == "false" || expired.trim() == "unlimited",
                 )
             } else {
-                tracing::warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                tracing::warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };
@@ -231,7 +233,9 @@ impl taos_query::AsyncTBuilder for TmqBuilder {
                     expired.trim() == "false" || expired.trim() == "unlimited",
                 )
             } else {
-                tracing::warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                tracing::warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };
@@ -1556,19 +1560,19 @@ mod tests {
         ])?;
 
         let tmq = TmqBuilder::from_dsn(
-            "taos://invalid_user:invalid_pass@localhost:6030?group.id=1512&td.connect.token=invalid_token"
+            "taos://invalid_user:invalid_pass@localhost:6030?group.id=1512&td.connect.token=invalid_token",
         )?;
         let err = tmq.build().unwrap_err();
         assert!(err.to_string().contains("Invalid token"));
 
         let tmq = TmqBuilder::from_dsn(
-            "taos://invalid_user:invalid_pass@localhost:6030?group.id=7265&bearer_token=invalid_token"
+            "taos://invalid_user:invalid_pass@localhost:6030?group.id=7265&bearer_token=invalid_token",
         )?;
         let err = tmq.build().unwrap_err();
         assert!(err.to_string().contains("Invalid token"));
 
         let tmq = TmqBuilder::from_dsn(
-            "taos://invalid_user:invalid_pass@localhost:6030?group.id=7363&bearerToken=invalid_token"
+            "taos://invalid_user:invalid_pass@localhost:6030?group.id=7363&bearerToken=invalid_token",
         )?;
         let err = tmq.build().unwrap_err();
         assert!(err.to_string().contains("Invalid token"));
@@ -3277,19 +3281,19 @@ mod async_tests {
         .await?;
 
         let tmq = TmqBuilder::from_dsn(
-            "taos://invalid_user:invalid_pass@localhost:6030?group.id=9378&td.connect.token=invalid_token"
+            "taos://invalid_user:invalid_pass@localhost:6030?group.id=9378&td.connect.token=invalid_token",
         )?;
         let err = tmq.build().await.unwrap_err();
         assert!(err.to_string().contains("Invalid token"));
 
         let tmq = TmqBuilder::from_dsn(
-            "taos://invalid_user:invalid_pass@localhost:6030?group.id=7362&bearer_token=invalid_token"
+            "taos://invalid_user:invalid_pass@localhost:6030?group.id=7362&bearer_token=invalid_token",
         )?;
         let err = tmq.build().await.unwrap_err();
         assert!(err.to_string().contains("Invalid token"));
 
         let tmq = TmqBuilder::from_dsn(
-            "taos://invalid_user:invalid_pass@localhost:6030?group.id=8392&bearerToken=invalid_token"
+            "taos://invalid_user:invalid_pass@localhost:6030?group.id=8392&bearerToken=invalid_token",
         )?;
         let err = tmq.build().await.unwrap_err();
         assert!(err.to_string().contains("Invalid token"));

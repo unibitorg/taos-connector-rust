@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::ffi::{c_char, c_int, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int};
 use std::ptr;
 
 use taos_error::Code;
@@ -7,36 +7,40 @@ use tracing::debug;
 
 use crate::ws::TAOS_RES;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_errno(res: *mut TAOS_RES) -> c_int {
-    debug!("taos_errno, res: {res:?}");
-    if res.is_null() {
-        return errno();
-    }
-    match (res as *mut TaosMaybeError<()>)
-        .as_ref()
-        .and_then(TaosMaybeError::errno)
-    {
-        Some(errno) => format_errno(errno),
-        None => 0,
+    unsafe {
+        debug!("taos_errno, res: {res:?}");
+        if res.is_null() {
+            return errno();
+        }
+        match (res as *mut TaosMaybeError<()>)
+            .as_ref()
+            .and_then(TaosMaybeError::errno)
+        {
+            Some(errno) => format_errno(errno),
+            None => 0,
+        }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_errstr(res: *mut TAOS_RES) -> *const c_char {
-    debug!("taos_errstr, res: {res:?}");
-    if res.is_null() {
-        if errno() == 0 {
-            return EMPTY.as_ptr();
+    unsafe {
+        debug!("taos_errstr, res: {res:?}");
+        if res.is_null() {
+            if errno() == 0 {
+                return EMPTY.as_ptr();
+            }
+            return errstr();
         }
-        return errstr();
-    }
-    match (res as *mut TaosMaybeError<()>)
-        .as_ref()
-        .and_then(TaosMaybeError::errstr)
-    {
-        Some(err) => err,
-        None => EMPTY.as_ptr(),
+        match (res as *mut TaosMaybeError<()>)
+            .as_ref()
+            .and_then(TaosMaybeError::errstr)
+        {
+            Some(err) => err,
+            None => EMPTY.as_ptr(),
+        }
     }
 }
 

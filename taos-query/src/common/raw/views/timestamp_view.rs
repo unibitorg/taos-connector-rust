@@ -114,7 +114,7 @@ impl TimestampView {
 
     /// Unsafe version for [methods.is_null]
     pub unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.nulls.is_null_unchecked(row)
+        unsafe { self.nulls.is_null_unchecked(row) }
     }
 
     /// Get nullable value at `row` index.
@@ -128,49 +128,57 @@ impl TimestampView {
 
     #[inline(always)]
     unsafe fn get_raw_at(&self, index: usize) -> *const Item {
-        self.data.as_ptr().add(index * ITEM_SIZE) as _
+        unsafe { self.data.as_ptr().add(index * ITEM_SIZE) as _ }
     }
 
     /// Get nullable value at `row` index.
     pub unsafe fn get_unchecked(&self, row: usize) -> Option<Timestamp> {
-        if self.nulls.is_null_unchecked(row) {
-            None
-        } else {
-            Some(Timestamp::new(
-                std::ptr::read_unaligned(
-                    self.data.as_ptr().add(row * std::mem::size_of::<Item>()) as _
-                ),
-                self.precision,
-            ))
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                None
+            } else {
+                Some(Timestamp::new(
+                    std::ptr::read_unaligned(
+                        self.data.as_ptr().add(row * std::mem::size_of::<Item>()) as _,
+                    ),
+                    self.precision,
+                ))
+            }
         }
     }
 
     pub unsafe fn get_ref_unchecked(&self, row: usize) -> Option<*const Item> {
-        if self.nulls.is_null_unchecked(row) {
-            None
-        } else {
-            Some(self.get_raw_at(row))
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                None
+            } else {
+                Some(self.get_raw_at(row))
+            }
         }
     }
 
     pub unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::Timestamp), BorrowedValue::Timestamp)
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::Timestamp), BorrowedValue::Timestamp)
+        }
     }
 
     pub unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        if self.nulls.is_null_unchecked(row) {
-            (
-                Ty::Timestamp,
-                std::mem::size_of::<Item>() as _,
-                std::ptr::null(),
-            )
-        } else {
-            (
-                Ty::Timestamp,
-                std::mem::size_of::<Item>() as _,
-                self.get_raw_at(row) as *const Item as _,
-            )
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                (
+                    Ty::Timestamp,
+                    std::mem::size_of::<Item>() as _,
+                    std::ptr::null(),
+                )
+            } else {
+                (
+                    Ty::Timestamp,
+                    std::mem::size_of::<Item>() as _,
+                    self.get_raw_at(row) as *const Item as _,
+                )
+            }
         }
     }
 
@@ -307,7 +315,7 @@ impl TimestampNanosecondView {
 }
 
 macro_rules! _impl_from_iter {
-    ($(($view:ident, $precision:expr)),+ $(,)?) => {
+    ($(($view:ident, $precision:expr_2021)),+ $(,)?) => {
         $(
             impl<A: Into<Option<Item>>> FromIterator<A> for $view {
                 fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {

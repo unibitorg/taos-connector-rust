@@ -130,7 +130,9 @@ async fn main() -> anyhow::Result<()> {
     let mut last_offset = None;
     let blocks_cost = Duration::ZERO;
     if args.interactive {
-        println!("> Interactive mode, press q to quit, c or nothing to continue, m to commit, off to continue and set interactive mode off:");
+        println!(
+            "> Interactive mode, press q to quit, c or nothing to continue, m to commit, off to continue and set interactive mode off:"
+        );
 
         let mut buf = String::new();
         std::io::stdin().read_line(&mut buf)?;
@@ -236,7 +238,9 @@ async fn main() -> anyhow::Result<()> {
             mid += 1;
 
             if args.interactive {
-                println!("> Interactive mode, press q to quit, c or nothing to continue, m to commit, off to continue and set interactive mode off:");
+                println!(
+                    "> Interactive mode, press q to quit, c or nothing to continue, m to commit, off to continue and set interactive mode off:"
+                );
                 let mut buf = String::new();
                 std::io::stdin().read_line(&mut buf)?;
                 let buf = buf.trim();

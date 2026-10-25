@@ -1,27 +1,27 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use itertools::Itertools;
 use taos_query::prelude::RawError;
 
-use taos_query::util::generate_req_id;
 use taos_query::RawResult;
-use tokio::sync::{mpsc, watch, Mutex, RwLock};
+use taos_query::util::generate_req_id;
+use tokio::sync::{Mutex, RwLock, mpsc, watch};
 use tokio::time;
-use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::tungstenite::Error as WsError;
+use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::Instrument;
 
 use crate::consumer::messages::{ReqId, TmqInit, TmqRecv, TmqRecvData, TmqSend, WsMessage};
 use crate::consumer::{WsTmqAgent, WsTmqError, WsTmqSender};
-use crate::query::asyn::{is_support_binary_sql, WS_ERROR_NO};
-use crate::query::messages::ToMessage;
 use crate::query::WsConnReq;
+use crate::query::asyn::{WS_ERROR_NO, is_support_binary_sql};
+use crate::query::messages::ToMessage;
 use crate::{
-    handle_disconnect_error, EndpointType, TaosBuilder, WsConnectCallbackFuture, WsStream,
-    WsStreamReader, WsStreamSender,
+    EndpointType, TaosBuilder, WsConnectCallbackFuture, WsStream, WsStreamReader, WsStreamSender,
+    handle_disconnect_error,
 };
 
 #[derive(Debug, Clone)]
@@ -434,15 +434,16 @@ async fn parse_text_message(
                 let _ = err_sender.send(WsTmqError::ChannelClosedError).await;
             }
         }
-        _ => {
-            if let Some((_, sender)) = queries.remove(&req_id) {
+        _ => match queries.remove(&req_id) {
+            Some((_, sender)) => {
                 if let Err(err) = sender.send(ok.map(|_| data)).await {
                     tracing::warn!("failed to send data, req_id: 0x{req_id:x}, err: {err:?}");
                 }
-            } else {
+            }
+            _ => {
                 tracing::warn!("no sender found for req_id: 0x{req_id:x}, the message may be lost");
             }
-        }
+        },
     }
 }
 
@@ -464,12 +465,15 @@ async fn parse_binary_message(data: Vec<u8>, queries: WsTmqAgent) {
 
     let req_id = slice.read_u64().unwrap();
 
-    if let Some((_, sender)) = queries.remove(&req_id) {
-        if let Err(err) = sender.send(Ok(TmqRecvData::Bytes(bytes.into()))).await {
-            tracing::warn!("failed to send data, req_id: 0x{req_id:x}, err: {err:?}");
+    match queries.remove(&req_id) {
+        Some((_, sender)) => {
+            if let Err(err) = sender.send(Ok(TmqRecvData::Bytes(bytes.into()))).await {
+                tracing::warn!("failed to send data, req_id: 0x{req_id:x}, err: {err:?}");
+            }
         }
-    } else {
-        tracing::warn!("no sender found for req_id: 0x{req_id:x}, the message may be lost");
+        _ => {
+            tracing::warn!("no sender found for req_id: 0x{req_id:x}, the message may be lost");
+        }
     }
 }
 
@@ -578,7 +582,7 @@ async fn send_recv(
                     _ => {
                         return Err(RawError::from_string(format!(
                             "unexpected subscribe response: {data:?}"
-                        )))
+                        )));
                     }
                 }
             }
@@ -591,7 +595,7 @@ async fn send_recv(
             _ => {
                 return Err(RawError::from_string(format!(
                     "unexpected message during subscribe: {message:?}"
-                )))
+                )));
             }
         }
     }
@@ -648,16 +652,16 @@ async fn cleanup_after_reconnect(queries: WsTmqAgent, cache: MessageCache) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     use futures::{SinkExt, StreamExt};
     use serde_json::json;
     use taos_query::AsyncTBuilder;
     use tokio::task::JoinHandle;
-    use warp::ws::Message;
     use warp::Filter;
+    use warp::ws::Message;
 
     use crate::TmqBuilder;
 
@@ -903,8 +907,8 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_recv_subscribe_resp_timeout() -> anyhow::Result<()> {
-        use crate::query::asyn::WS_ERROR_NO;
         use crate::TaosBuilder;
+        use crate::query::asyn::WS_ERROR_NO;
         use serde_json::Value;
         use taos_query::prelude::*;
         use taos_query::util::ws_proxy::*;
