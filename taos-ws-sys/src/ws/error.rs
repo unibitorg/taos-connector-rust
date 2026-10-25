@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::ffi::{c_char, c_int, CStr, CString};
+use std::ffi::{CStr, CString, c_char, c_int};
 use std::ptr;
 
 use taos_error::Code;
@@ -7,7 +7,7 @@ use tracing::debug;
 
 use crate::ws::TAOS_RES;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_errno(res: *mut TAOS_RES) -> c_int {
     debug!("taos_errno, res: {res:?}");
     if res.is_null() {
@@ -22,7 +22,7 @@ pub unsafe extern "C" fn taos_errno(res: *mut TAOS_RES) -> c_int {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_errstr(res: *mut TAOS_RES) -> *const c_char {
     debug!("taos_errstr, res: {res:?}");
     if res.is_null() {

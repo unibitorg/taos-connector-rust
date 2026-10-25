@@ -9,8 +9,8 @@ mod tests {
         tmq_consumer_new,
     };
     use taosws::ws::{
-        taos_close, taos_connect, taos_connect_with, taos_init, taos_options, taos_set_option,
-        OPTIONS, TSDB_OPTION,
+        OPTIONS, TSDB_OPTION, taos_close, taos_connect, taos_connect_with, taos_init, taos_options,
+        taos_set_option,
     };
 
     #[test]

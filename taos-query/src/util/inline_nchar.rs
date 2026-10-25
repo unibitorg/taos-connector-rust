@@ -75,10 +75,10 @@ macro_rules! _impl_inline_str {
                 /// # Safety
                 ///
                 /// Do not use it directly.
-                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self {
+                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self { unsafe {
                     // std::mem::transmute::<*const u8, &InlineNChar<$ty>>(ptr)
                     &*ptr.cast::<InlineNChar<$ty>>()
-                }
+                }}
                 #[inline]
                 #[rustversion::attr(nightly, const)]
                 pub fn as_bytes(&self) -> &[u8] {
@@ -112,7 +112,7 @@ macro_rules! _impl_inline_str {
                 /// # Safety
                 ///
                 /// Do not use it directly.
-                pub unsafe fn into_inline_str(&self) -> &super::InlineStr<$ty> {
+                pub unsafe fn into_inline_str(&self) -> &super::InlineStr<$ty> { unsafe {
                     if self.len() == 0 {
                         return std::mem::transmute(self);
                     }
@@ -130,7 +130,7 @@ macro_rules! _impl_inline_str {
                     }
                     v.set_len(len);
                     v
-                }
+                }}
             }
         )*
     };

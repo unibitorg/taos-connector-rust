@@ -9,13 +9,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use taos_query::{stmt2::*, util::generate_req_id, AsyncQueryable, Queryable, RawError, RawResult};
+use taos_query::{AsyncQueryable, Queryable, RawError, RawResult, stmt2::*, util::generate_req_id};
 
 use crate::{
+    ResultSet,
     into_c_str::IntoCStr,
     raw::{ApiEntry, RawRes, RawTaos, Stmt2Api},
-    types::{TaosStmt2Option, TAOS_RES, TAOS_STMT2},
-    ResultSet,
+    types::{TAOS_RES, TAOS_STMT2, TaosStmt2Option},
 };
 
 mod bind;
@@ -257,43 +257,45 @@ impl Future for Stmt2ExecFuture {
 }
 
 unsafe extern "C" fn stmt2_exec_cb(param: *mut c_void, res: *mut TAOS_RES, code: c_int) {
-    if res.is_null() && code == 0 {
-        unreachable!("Stmt2 exec callback should be ok or error");
-    }
+    unsafe {
+        if res.is_null() && code == 0 {
+            unreachable!("Stmt2 exec callback should be ok or error");
+        }
 
-    if param.is_null() {
-        tracing::error!("Stmt2 exec callback param should not be null");
-        return;
-    }
+        if param.is_null() {
+            tracing::error!("Stmt2 exec callback param should not be null");
+            return;
+        }
 
-    let cell = &*(param as *const UnsafeCell<Stmt2ExecState>);
-    let state = unsafe { &mut *cell.get() };
-    let elapsed = state.start_time.map(|t| t.elapsed()).unwrap_or_default();
-    tracing::trace!(elapsed = ?elapsed, "Received stmt2 exec callback");
-    state.callback_cost.replace(elapsed);
+        let cell = &*(param as *const UnsafeCell<Stmt2ExecState>);
+        let state = &mut *cell.get();
+        let elapsed = state.start_time.map(|t| t.elapsed()).unwrap_or_default();
+        tracing::trace!(elapsed = ?elapsed, "Received stmt2 exec callback");
+        state.callback_cost.replace(elapsed);
 
-    let result = if code < 0 {
-        let err = if let Some(stmt) = state.stmt2 {
-            match state.api.stmt2.err_as_str(stmt) {
-                Ok(msg) => RawError::new(code, msg),
-                Err(err) => err,
-            }
+        let result = if code < 0 {
+            let err = if let Some(stmt) = state.stmt2 {
+                match state.api.stmt2.err_as_str(stmt) {
+                    Ok(msg) => RawError::new(code, msg),
+                    Err(err) => err,
+                }
+            } else {
+                RawError::new(code, "Stmt2 exec callback failed: stmt2 pointer missing")
+            };
+            Err(err)
         } else {
-            RawError::new(code, "Stmt2 exec callback failed: stmt2 pointer missing")
+            debug_assert!(!res.is_null());
+            assert_ne!(res as usize, 1, "res should not be 1");
+            let raw_res = RawRes::from_ptr_unowned(state.api.clone(), res);
+            let affected_rows = raw_res.affected_rows() as usize;
+            Ok((affected_rows, raw_res))
         };
-        Err(err)
-    } else {
-        debug_assert!(!res.is_null());
-        assert_ne!(res as usize, 1, "res should not be 1");
-        let raw_res = RawRes::from_ptr_unowned(state.api.clone(), res);
-        let affected_rows = raw_res.affected_rows() as usize;
-        Ok((affected_rows, raw_res))
-    };
 
-    state.result.replace(result);
-    state.waiting = false;
-    if let Some(waker) = state.waker.take() {
-        waker.wake();
+        state.result.replace(result);
+        state.waiting = false;
+        if let Some(waker) = state.waker.take() {
+            waker.wake();
+        }
     }
 }
 
@@ -302,7 +304,7 @@ unsafe extern "C" fn stmt2_exec_cb(param: *mut c_void, res: *mut TAOS_RES, code:
 mod tests {
     use bytes::Bytes;
     use serde::Deserialize;
-    use taos_query::common::{decimal::Decimal, Timestamp};
+    use taos_query::common::{Timestamp, decimal::Decimal};
 
     use crate::prelude::*;
 

@@ -5,8 +5,8 @@ use std::os::raw::*;
 use taos_query::common::Value;
 use taos_query::prelude::Itertools;
 use taos_query::stmt::Bindable;
-use taos_ws::stmt::{StmtField as WsStmtField, WsFieldsable};
 use taos_ws::Stmt;
+use taos_ws::stmt::{StmtField as WsStmtField, WsFieldsable};
 
 use super::*;
 
@@ -50,13 +50,13 @@ unsafe fn stmt_init(taos: *const WS_TAOS, req_id: u64) -> WsResult<Stmt> {
 }
 
 /// Create new stmt object.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_init(taos: *const WS_TAOS) -> *mut WS_STMT {
     ws_stmt_init_with_reqid(taos, get_req_id(taos))
 }
 
 /// Create new stmt object with req_id.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_init_with_reqid(
     taos: *const WS_TAOS,
     req_id: u64,
@@ -66,7 +66,7 @@ pub unsafe extern "C" fn ws_stmt_init_with_reqid(
 }
 
 /// Prepare with sql command
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_prepare(
     stmt: *mut WS_STMT,
     sql: *const c_char,
@@ -108,7 +108,7 @@ pub unsafe extern "C" fn ws_stmt_prepare(
 }
 
 /// Set table name.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_tbname(stmt: *mut WS_STMT, name: *const c_char) -> c_int {
     match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
         Some(stmt) => {
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn ws_stmt_set_tbname(stmt: *mut WS_STMT, name: *const c_c
 }
 
 /// Set sub table name.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_sub_tbname(stmt: *mut WS_STMT, name: *const c_char) -> c_int {
     match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
         Some(stmt) => {
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn ws_stmt_set_sub_tbname(stmt: *mut WS_STMT, name: *const
 }
 
 /// Set table name and tags.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_tbname_tags(
     stmt: *mut WS_STMT,
     name: *const c_char,
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn ws_stmt_set_tbname_tags(
 ///
 /// Please always use `ws_stmt_reclaim_fields` to free memory.
 #[allow(non_snake_case)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_get_tag_fields(
     stmt: *mut WS_STMT,
     fieldNum: *mut c_int,
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn ws_stmt_get_tag_fields(
 ///
 /// Please always use `ws_stmt_reclaim_fields` to free memory.
 #[allow(non_snake_case)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_get_col_fields(
     stmt: *mut WS_STMT,
     fieldNum: *mut c_int,
@@ -288,7 +288,7 @@ pub unsafe extern "C" fn ws_stmt_get_col_fields(
 /// Free memory of fields that was allocated by `ws_stmt_get_tag_fields` or `ws_stmt_get_col_fields`.
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_reclaim_fields(
     stmt: *mut WS_STMT,
     fields: *mut *mut StmtField,
@@ -299,7 +299,7 @@ pub unsafe extern "C" fn ws_stmt_reclaim_fields(
 }
 
 /// Currently only insert sql is supported.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_is_insert(stmt: *mut WS_STMT, insert: *mut c_int) -> c_int {
     let _ = stmt;
     *insert = 1;
@@ -393,7 +393,7 @@ impl TaosMultiBind {
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        use serde_json::{json, Value};
+        use serde_json::{Value, json};
         assert!(self.num > 0, "invalid bind value");
         let len = self.num as usize;
 
@@ -418,11 +418,7 @@ impl TaosMultiBind {
                             .zip(nulls)
                             .map(
                                 |(value, is_null)| {
-                                    if *is_null {
-                                        None
-                                    } else {
-                                        Some(*value)
-                                    }
+                                    if *is_null { None } else { Some(*value) }
                                 },
                             )
                             .collect();
@@ -646,7 +642,7 @@ impl Drop for TaosMultiBind {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_tags(
     stmt: *mut WS_STMT,
     bind: *const WS_MULTI_BIND,
@@ -678,7 +674,7 @@ pub unsafe extern "C" fn ws_stmt_set_tags(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_bind_param_batch(
     stmt: *mut WS_STMT,
     bind: *const WS_MULTI_BIND,
@@ -710,7 +706,7 @@ pub unsafe extern "C" fn ws_stmt_bind_param_batch(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_add_batch(stmt: *mut WS_STMT) -> c_int {
     match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
         Some(stmt) => {
@@ -734,7 +730,7 @@ pub unsafe extern "C" fn ws_stmt_add_batch(stmt: *mut WS_STMT) -> c_int {
 }
 
 /// Execute the bind batch, get inserted rows in `affected_row` pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_execute(stmt: *mut WS_STMT, affected_rows: *mut i32) -> c_int {
     match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
         Some(stmt) => match stmt
@@ -760,7 +756,7 @@ pub unsafe extern "C" fn ws_stmt_execute(stmt: *mut WS_STMT, affected_rows: *mut
 }
 
 /// Get inserted rows in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_affected_rows(stmt: *mut WS_STMT) -> c_int {
     match (stmt as *mut WsMaybeError<Stmt>)
         .as_mut()
@@ -772,7 +768,7 @@ pub unsafe extern "C" fn ws_stmt_affected_rows(stmt: *mut WS_STMT) -> c_int {
 }
 
 /// Get inserted rows in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_affected_rows_once(stmt: *mut WS_STMT) -> c_int {
     match (stmt as *mut WsMaybeError<Stmt>)
         .as_mut()
@@ -784,7 +780,7 @@ pub unsafe extern "C" fn ws_stmt_affected_rows_once(stmt: *mut WS_STMT) -> c_int
 }
 
 /// Get num_params in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_num_params(stmt: *mut WS_STMT, nums: *mut c_int) -> c_int {
     match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
         Some(stmt) => match stmt
@@ -809,7 +805,7 @@ pub unsafe extern "C" fn ws_stmt_num_params(stmt: *mut WS_STMT, nums: *mut c_int
 }
 
 /// Get param by index in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_get_param(
     stmt: *mut WS_STMT,
     idx: c_int,
@@ -840,13 +836,13 @@ pub unsafe extern "C" fn ws_stmt_get_param(
 }
 
 /// Equivalent to ws_errstr
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_errstr(stmt: *mut WS_STMT) -> *const c_char {
     ws_errstr(stmt as _)
 }
 
 /// Same to taos_stmt_close
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_close(stmt: *mut WS_STMT) -> i32 {
     let _ = Box::from_raw(stmt as *mut WsMaybeError<Stmt>);
     0

@@ -6,9 +6,9 @@ use faststr::FastStr;
 pub use messages::ConnOption;
 pub(crate) use messages::WsConnReq;
 pub use messages::{BindType, Stmt2Field};
+use taos_query::AsyncQueryable;
 use taos_query::common::{RawMeta, SmlData};
 use taos_query::prelude::RawResult;
-use taos_query::AsyncQueryable;
 
 use crate::TaosBuilder;
 
@@ -138,7 +138,7 @@ mod tests {
     use serde::Deserialize;
     use taos_query::util::hex::*;
 
-    use crate::{query::asyn::WS_ERROR_NO, TaosBuilder};
+    use crate::{TaosBuilder, query::asyn::WS_ERROR_NO};
 
     #[test]
     fn ws_sync_json() -> anyhow::Result<()> {

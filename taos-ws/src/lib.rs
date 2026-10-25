@@ -11,25 +11,25 @@ use std::time::Duration;
 
 use chrono_tz::Tz;
 use dashmap::DashMap;
-use futures::stream::{SplitSink, SplitStream};
 use futures::StreamExt;
+use futures::stream::{SplitSink, SplitStream};
 use futures_util::SinkExt;
 use once_cell::sync::OnceCell;
 use query::Error as QueryError;
-use rand::seq::SliceRandom;
 use rand::Rng;
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rand::seq::SliceRandom;
 use rustls::client::WebPkiServerVerifier;
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{ClientConfig, DigitallySignedStruct};
 use taos_query::prelude::Code;
-use taos_query::util::{generate_req_id, Edition};
+use taos_query::util::{Edition, generate_req_id};
 use taos_query::{DsnError, IntoDsn, RawError, RawResult};
 use tokio::time;
-use tokio_tungstenite::tungstenite::error::ProtocolError;
-use tokio_tungstenite::tungstenite::extensions::DeflateConfig;
 use tokio_tungstenite::tungstenite::Error as WsError;
 use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::error::ProtocolError;
+use tokio_tungstenite::tungstenite::extensions::DeflateConfig;
 
 pub mod stmt;
 pub use stmt::Stmt;
@@ -48,14 +48,14 @@ pub(crate) use taos_query::block_in_place_or_global;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::{
-    connect_async_tls_with_config, Connector, MaybeTlsStream, WebSocketStream,
+    Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
 };
 
 pub(crate) mod cluster;
 
 use crate::query::asyn::WS_ERROR_NO;
 use crate::query::messages::{ToMessage, WsRecv, WsRecvData, WsSend};
-use crate::query::{send_conn_request, ConnOption};
+use crate::query::{ConnOption, send_conn_request};
 
 type Version = String;
 
@@ -586,7 +586,7 @@ impl TaosBuilder {
             Some(v) => {
                 return Err(
                     DsnError::InvalidParam("version_prefer".to_string(), v.to_string()).into(),
-                )
+                );
             }
         };
 
@@ -732,7 +732,7 @@ impl TaosBuilder {
                         }
 
                         macro_rules! call {
-                            ($func:expr, $ctx:expr) => {
+                            ($func:expr_2021, $ctx:expr_2021) => {
                                 match $func.await {
                                     Ok(res) => res,
                                     Err(err) => {
@@ -863,7 +863,9 @@ impl TaosBuilder {
             if let Some(certs) = &tls_cfg.certs {
                 let (num_added, num_ignored) =
                     root_store.add_parsable_certificates(certs.iter().cloned());
-                tracing::trace!("added {num_added} valid certificates, ignored {num_ignored} invalid certificates");
+                tracing::trace!(
+                    "added {num_added} valid certificates, ignored {num_ignored} invalid certificates"
+                );
                 if num_ignored > 0 {
                     return Err(RawError::new(
                         WS_ERROR_NO::TLS_ERROR.as_code(),
@@ -906,42 +908,45 @@ impl TaosBuilder {
             let max_non_version_cnt = 5;
             let mut non_version_cnt = 0;
             loop {
-                if let Some(res) = ws_stream.next().await {
-                    let message = res.map_err(handle_disconnect_error)?;
-                    tracing::trace!("send_version_request, received message: {message}");
-                    match message {
-                        Message::Text(text) => {
-                            let resp: WsRecv = serde_json::from_str(&text).map_err(|err| {
-                                RawError::any(err)
-                                    .with_code(WS_ERROR_NO::DE_ERROR.as_code())
-                                    .context("invalid json response")
-                            })?;
-                            let (_, data, ok) = resp.ok();
-                            ok?;
-                            match data {
-                                WsRecvData::Version { version } => {
-                                    return Ok(version);
+                match ws_stream.next().await {
+                    Some(res) => {
+                        let message = res.map_err(handle_disconnect_error)?;
+                        tracing::trace!("send_version_request, received message: {message}");
+                        match message {
+                            Message::Text(text) => {
+                                let resp: WsRecv = serde_json::from_str(&text).map_err(|err| {
+                                    RawError::any(err)
+                                        .with_code(WS_ERROR_NO::DE_ERROR.as_code())
+                                        .context("invalid json response")
+                                })?;
+                                let (_, data, ok) = resp.ok();
+                                ok?;
+                                match data {
+                                    WsRecvData::Version { version } => {
+                                        return Ok(version);
+                                    }
+                                    _ => return Ok(self.version_prefer.clone()),
                                 }
-                                _ => return Ok(self.version_prefer.clone()),
                             }
-                        }
-                        Message::Ping(bytes) => {
-                            ws_stream
-                                .send(Message::Pong(bytes))
-                                .await
-                                .map_err(handle_disconnect_error)?;
+                            Message::Ping(bytes) => {
+                                ws_stream
+                                    .send(Message::Pong(bytes))
+                                    .await
+                                    .map_err(handle_disconnect_error)?;
 
-                            non_version_cnt += 1;
-                            if non_version_cnt >= max_non_version_cnt {
-                                return Ok(self.version_prefer.clone());
+                                non_version_cnt += 1;
+                                if non_version_cnt >= max_non_version_cnt {
+                                    return Ok(self.version_prefer.clone());
+                                }
                             }
+                            _ => return Ok(self.version_prefer.clone()),
                         }
-                        _ => return Ok(self.version_prefer.clone()),
                     }
-                } else {
-                    return Err(RawError::from_code(
-                        WS_ERROR_NO::WEBSOCKET_DISCONNECTED.as_code(),
-                    ));
+                    _ => {
+                        return Err(RawError::from_code(
+                            WS_ERROR_NO::WEBSOCKET_DISCONNECTED.as_code(),
+                        ));
+                    }
                 }
             }
         };
@@ -1005,7 +1010,7 @@ impl TaosBuilder {
                         _ => {
                             return Err(RawError::from_string(format!(
                                 "unexpected options_connection response: {data:?}"
-                            )))
+                            )));
                         }
                     }
                 }
@@ -1018,7 +1023,7 @@ impl TaosBuilder {
                 _ => {
                     return Err(RawError::from_string(format!(
                         "unexpected message during options_connection: {message:?}"
-                    )))
+                    )));
                 }
             }
         }
@@ -1330,8 +1335,8 @@ fn parse_ca_to_certs(input: &str) -> Result<Vec<CertificateDer<'static>>, DsnErr
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::Ordering;
     use std::sync::Arc;
+    use std::sync::atomic::Ordering;
     use std::thread;
 
     use futures::{SinkExt, StreamExt};
@@ -1431,9 +1436,10 @@ mod tests {
         assert_eq!(builder.version_prefer, "3.x");
 
         let err = TaosBuilder::from_dsn("ws://localhost:6041?version_prefer=4.x").unwrap_err();
-        assert!(err
-            .message()
-            .contains("invalid parameter for version_prefer: 4.x"),);
+        assert!(
+            err.message()
+                .contains("invalid parameter for version_prefer: 4.x"),
+        );
 
         Ok(())
     }
@@ -1527,8 +1533,8 @@ mod tests {
     }
 
     #[test]
-    fn test_adapter_ha_merge_instances_uses_discovered_instances_without_active_addr_anchor(
-    ) -> Result<(), anyhow::Error> {
+    fn test_adapter_ha_merge_instances_uses_discovered_instances_without_active_addr_anchor()
+    -> Result<(), anyhow::Error> {
         let builder =
             TaosBuilder::from_dsn("ws://ha-builder-anchor-a.example:6041?adapter_ha=true")?;
 
@@ -1591,8 +1597,8 @@ mod tests {
     }
 
     #[test]
-    fn test_adapter_ha_concurrent_first_merges_from_different_seeds_do_not_split_registry(
-    ) -> Result<(), anyhow::Error> {
+    fn test_adapter_ha_concurrent_first_merges_from_different_seeds_do_not_split_registry()
+    -> Result<(), anyhow::Error> {
         let builders = Arc::new([
             TaosBuilder::from_dsn("ws://ha-builder-concurrent-a.example:6041?adapter_ha=true")?,
             TaosBuilder::from_dsn("ws://ha-builder-concurrent-b.example:6041?adapter_ha=true")?,
@@ -1628,8 +1634,8 @@ mod tests {
     }
 
     #[test]
-    fn test_adapter_ha_from_dsn_multi_cluster_seed_degrades_to_original_seeds(
-    ) -> Result<(), anyhow::Error> {
+    fn test_adapter_ha_from_dsn_multi_cluster_seed_degrades_to_original_seeds()
+    -> Result<(), anyhow::Error> {
         let registry = ClusterRegistry::global();
         registry.update_cluster(&["ha-builder-multi-a.example:6041".to_string()]);
         registry.update_cluster(&["ha-builder-multi-b.example:6041".to_string()]);
@@ -1663,9 +1669,11 @@ mod tests {
 
         let addrs_after_first = builder.addrs.read().unwrap().clone();
         assert!(!addrs_after_first.is_empty());
-        assert!(addrs_after_first
-            .iter()
-            .all(|addr| is_valid_host_port(addr)));
+        assert!(
+            addrs_after_first
+                .iter()
+                .all(|addr| is_valid_host_port(addr))
+        );
 
         let mut deduped = addrs_after_first.clone();
         deduped.sort_unstable();
@@ -1854,9 +1862,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_recv_version_resp_return_ping() -> anyhow::Result<()> {
-        use serde_json::{json, Value};
-        use warp::ws::Message;
+        use serde_json::{Value, json};
         use warp::Filter;
+        use warp::ws::Message;
 
         let _ = tracing_subscriber::fmt()
             .with_file(true)
@@ -1921,9 +1929,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_recv_version_resp_return_pong() -> anyhow::Result<()> {
-        use serde_json::{json, Value};
-        use warp::ws::Message;
+        use serde_json::{Value, json};
         use warp::Filter;
+        use warp::ws::Message;
 
         let _ = tracing_subscriber::fmt()
             .with_file(true)
@@ -1986,9 +1994,9 @@ mod tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_recv_version_resp_return_conn() -> anyhow::Result<()> {
-        use serde_json::{json, Value};
-        use warp::ws::Message;
+        use serde_json::{Value, json};
         use warp::Filter;
+        use warp::ws::Message;
 
         let _ = tracing_subscriber::fmt()
             .with_file(true)
@@ -2073,9 +2081,10 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.code(), WS_ERROR_NO::RECV_MESSAGE_TIMEOUT.as_code());
-        assert!(err
-            .to_string()
-            .contains("timeout waiting for conn response"));
+        assert!(
+            err.to_string()
+                .contains("timeout waiting for conn response")
+        );
 
         Ok(())
     }
@@ -2486,25 +2495,53 @@ mod tls_tests {
         let tls_ca_path = ca_path.to_str().unwrap();
 
         let tls_ca_cases = [
-            format!("wss://localhost:6445?tls_mode=verify_identity&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca}"),
-            format!("wss://localhost:6445?tls_mode=VERIFY_IDENTITY&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca}"),
-            format!("wss://localhost:6445?tls_mode=VeRify_IdenTity&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca}"),
-            format!("wss://localhost:6445?tls_mode=  VeRify_IdenTity  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca}  "),
-            format!("wss://localhost:6445?tls_mode=verify_identity&tls_ca={tls_ca}&tls_version=tlsv1.2"),
-            format!("wss://localhost:6445?tls_ca={tls_ca}&tls_mode=verify_identity&tls_version=tlsv1.3"),
+            format!(
+                "wss://localhost:6445?tls_mode=verify_identity&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca}"
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=VERIFY_IDENTITY&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca}"
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=VeRify_IdenTity&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca}"
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=  VeRify_IdenTity  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca}  "
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=verify_identity&tls_ca={tls_ca}&tls_version=tlsv1.2"
+            ),
+            format!(
+                "wss://localhost:6445?tls_ca={tls_ca}&tls_mode=verify_identity&tls_version=tlsv1.3"
+            ),
             format!("wss://localhost:6445?tls_ca={tls_ca}&tls_mode=verify_identity"),
-            format!("wss://localhost:6445?tls_mode=verify_identity&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca}"),
+            format!(
+                "wss://localhost:6445?tls_mode=verify_identity&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca}"
+            ),
         ];
 
         let tls_ca_path_cases = [
-            format!("wss://localhost:6445?tls_mode=verify_identity&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca_path}"),
-            format!("wss://localhost:6445?tls_mode=VERIFY_IDENTITY&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca_path}"),
-            format!("wss://localhost:6445?tls_mode=VeRify_IdenTity&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca_path}"),
-            format!("wss://localhost:6445?tls_mode=  VeRify_IdenTity  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca_path}  "),
-            format!("wss://localhost:6445?tls_mode=verify_identity&tls_ca={tls_ca_path}&tls_version=tlsv1.2"),
-            format!("wss://localhost:6445?tls_ca={tls_ca_path}&tls_mode=verify_identity&tls_version=tlsv1.3"),
+            format!(
+                "wss://localhost:6445?tls_mode=verify_identity&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca_path}"
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=VERIFY_IDENTITY&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca_path}"
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=VeRify_IdenTity&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca_path}"
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=  VeRify_IdenTity  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca_path}  "
+            ),
+            format!(
+                "wss://localhost:6445?tls_mode=verify_identity&tls_ca={tls_ca_path}&tls_version=tlsv1.2"
+            ),
+            format!(
+                "wss://localhost:6445?tls_ca={tls_ca_path}&tls_mode=verify_identity&tls_version=tlsv1.3"
+            ),
             format!("wss://localhost:6445?tls_ca={tls_ca_path}&tls_mode=verify_identity"),
-            format!("wss://localhost:6445?tls_mode=verify_identity&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca_path}"),
+            format!(
+                "wss://localhost:6445?tls_mode=verify_identity&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca_path}"
+            ),
         ];
 
         for dsn in tls_ca_cases {
@@ -2527,25 +2564,49 @@ mod tls_tests {
         let tls_ca_path = ca_path.to_str().unwrap();
 
         let tls_ca_cases = [
-            format!("wss://localhost:6446?tls_mode=verify_ca&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca}"),
-            format!("wss://localhost:6446?tls_mode=VERIFY_CA&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca}"),
-            format!("wss://localhost:6446?tls_mode=VeRify_Ca&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca}"),
-            format!("wss://localhost:6446?tls_mode=  VeRify_Ca  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca}  "),
+            format!(
+                "wss://localhost:6446?tls_mode=verify_ca&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca}"
+            ),
+            format!(
+                "wss://localhost:6446?tls_mode=VERIFY_CA&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca}"
+            ),
+            format!(
+                "wss://localhost:6446?tls_mode=VeRify_Ca&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca}"
+            ),
+            format!(
+                "wss://localhost:6446?tls_mode=  VeRify_Ca  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca}  "
+            ),
             format!("wss://localhost:6446?tls_mode=verify_ca&tls_ca={tls_ca}&tls_version=tlsv1.2"),
             format!("wss://localhost:6446?tls_ca={tls_ca}&tls_mode=verify_ca&tls_version=tlsv1.3"),
             format!("wss://localhost:6446?tls_ca={tls_ca}&tls_mode=verify_ca"),
-            format!("wss://localhost:6446?tls_mode=verify_ca&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca}"),
+            format!(
+                "wss://localhost:6446?tls_mode=verify_ca&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca}"
+            ),
         ];
 
         let tls_ca_path_cases = [
-            format!("wss://localhost:6446?tls_mode=verify_ca&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca_path}"),
-            format!("wss://localhost:6446?tls_mode=VERIFY_CA&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca_path}"),
-            format!("wss://localhost:6446?tls_mode=VeRify_Ca&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca_path}"),
-            format!("wss://localhost:6446?tls_mode=  VeRify_Ca  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca_path}  "),
-            format!("wss://localhost:6446?tls_mode=verify_ca&tls_ca={tls_ca_path}&tls_version=tlsv1.2"),
-            format!("wss://localhost:6446?tls_ca={tls_ca_path}&tls_mode=verify_ca&tls_version=tlsv1.3"),
+            format!(
+                "wss://localhost:6446?tls_mode=verify_ca&tls_version=tlsv1.2,tlsv1.3&tls_ca={tls_ca_path}"
+            ),
+            format!(
+                "wss://localhost:6446?tls_mode=VERIFY_CA&tls_version=TLSV1.2,TLSV1.3&tls_ca={tls_ca_path}"
+            ),
+            format!(
+                "wss://localhost:6446?tls_mode=VeRify_Ca&tls_version=tlsV1.2,TlsV1.3&tls_ca={tls_ca_path}"
+            ),
+            format!(
+                "wss://localhost:6446?tls_mode=  VeRify_Ca  &tls_version=  TlsV1.2,  TlsV1.3  &tls_ca=  {tls_ca_path}  "
+            ),
+            format!(
+                "wss://localhost:6446?tls_mode=verify_ca&tls_ca={tls_ca_path}&tls_version=tlsv1.2"
+            ),
+            format!(
+                "wss://localhost:6446?tls_ca={tls_ca_path}&tls_mode=verify_ca&tls_version=tlsv1.3"
+            ),
             format!("wss://localhost:6446?tls_ca={tls_ca_path}&tls_mode=verify_ca"),
-            format!("wss://localhost:6446?tls_mode=verify_ca&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca_path}"),
+            format!(
+                "wss://localhost:6446?tls_mode=verify_ca&tls_version=TLSv1.3,TLSv1.3&tls_ca={tls_ca_path}"
+            ),
         ];
 
         for dsn in tls_ca_cases {
@@ -2569,9 +2630,10 @@ mod tls_tests {
         .build()
         .await
         .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("invalid peer certificate: certificate not valid for name"));
+        assert!(
+            err.to_string()
+                .contains("invalid peer certificate: certificate not valid for name")
+        );
         Ok(())
     }
 
@@ -2585,9 +2647,10 @@ mod tls_tests {
         .build()
         .await
         .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("received fatal alert: ProtocolVersion"));
+        assert!(
+            err.to_string()
+                .contains("received fatal alert: ProtocolVersion")
+        );
         Ok(())
     }
 
@@ -2601,9 +2664,10 @@ mod tls_tests {
         .build()
         .await
         .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("received fatal alert: ProtocolVersion"));
+        assert!(
+            err.to_string()
+                .contains("received fatal alert: ProtocolVersion")
+        );
         Ok(())
     }
 
@@ -2617,9 +2681,10 @@ mod tls_tests {
         .build()
         .await
         .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("invalid peer certificate: BadSignature"));
+        assert!(
+            err.to_string()
+                .contains("invalid peer certificate: BadSignature")
+        );
         Ok(())
     }
 
@@ -2634,9 +2699,10 @@ mod tls_tests {
     fn test_parse_invalid_tls_version() {
         let dsn = "wss://localhost:6041?tls_version=TLSv1.1";
         let err = TaosBuilder::from_dsn(dsn).unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("invalid parameter for tls_version"));
+        assert!(
+            err.to_string()
+                .contains("invalid parameter for tls_version")
+        );
     }
 
     #[test]

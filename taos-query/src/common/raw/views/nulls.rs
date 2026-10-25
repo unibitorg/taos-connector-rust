@@ -46,39 +46,45 @@ impl FromIterator<bool> for NullBits {
 
 impl NullBits {
     pub unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        const BIT_LOC_SHIFT: usize = 3;
-        const BIT_POS_SHIFT: usize = 7;
+        unsafe {
+            const BIT_LOC_SHIFT: usize = 3;
+            const BIT_POS_SHIFT: usize = 7;
 
-        // Check bit at index: `$row >> 3` with bit position `$row % 8` from a u8 slice bitmap view.
-        // It's a left-to-right bitmap, eg: 0b10000000, means row 0 is null.
-        // Here we use right shift and then compare with 0b1.
-        (self.0.as_ref().get_unchecked(row >> BIT_LOC_SHIFT)
-            >> (BIT_POS_SHIFT - (row & BIT_POS_SHIFT)) as u8)
-            & 0x1
-            == 1
+            // Check bit at index: `$row >> 3` with bit position `$row % 8` from a u8 slice bitmap view.
+            // It's a left-to-right bitmap, eg: 0b10000000, means row 0 is null.
+            // Here we use right shift and then compare with 0b1.
+            (self.0.as_ref().get_unchecked(row >> BIT_LOC_SHIFT)
+                >> (BIT_POS_SHIFT - (row & BIT_POS_SHIFT)) as u8)
+                & 0x1
+                == 1
+        }
     }
 
     pub unsafe fn set_null_unchecked(&self, index: usize) {
-        const BIT_LOC_SHIFT: usize = 3;
-        const BIT_POS_SHIFT: usize = 7;
-        let loc = self.0.as_ptr().add(index >> BIT_LOC_SHIFT) as *mut u8;
-        *loc |= 1 << (BIT_POS_SHIFT - (index & BIT_POS_SHIFT));
-        debug_assert!(self.is_null_unchecked(index));
+        unsafe {
+            const BIT_LOC_SHIFT: usize = 3;
+            const BIT_POS_SHIFT: usize = 7;
+            let loc = self.0.as_ptr().add(index >> BIT_LOC_SHIFT) as *mut u8;
+            *loc |= 1 << (BIT_POS_SHIFT - (index & BIT_POS_SHIFT));
+            debug_assert!(self.is_null_unchecked(index));
+        }
     }
 
     pub unsafe fn slice(&self, range: Range<usize>) -> Self {
-        let len = range.end - range.start;
-        let bytes_len = null_bits_len(len);
-        let inner = std::alloc::alloc(Layout::from_size_align_unchecked(bytes_len, 1));
-        inner.write_bytes(0, bytes_len);
-        let bytes: Box<[u8]> = Box::from_raw(std::slice::from_raw_parts_mut(inner, bytes_len));
-        let nulls = NullBits(bytes.into());
-        for i in 0..len {
-            if self.is_null_unchecked(i + range.start) {
-                unsafe { nulls.set_null_unchecked(i) };
+        unsafe {
+            let len = range.end - range.start;
+            let bytes_len = null_bits_len(len);
+            let inner = std::alloc::alloc(Layout::from_size_align_unchecked(bytes_len, 1));
+            inner.write_bytes(0, bytes_len);
+            let bytes: Box<[u8]> = Box::from_raw(std::slice::from_raw_parts_mut(inner, bytes_len));
+            let nulls = NullBits(bytes.into());
+            for i in 0..len {
+                if self.is_null_unchecked(i + range.start) {
+                    nulls.set_null_unchecked(i);
+                }
             }
+            nulls
         }
-        nulls
     }
 
     pub fn iter(&self) -> NullsIter<'_> {

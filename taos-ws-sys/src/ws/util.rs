@@ -1,12 +1,12 @@
-use std::ffi::{c_char, CStr};
+use std::ffi::{CStr, c_char};
 
 #[cfg(windows)]
 use chrono::Offset;
-use libc::{setlocale, LC_CTYPE};
+use libc::{LC_CTYPE, setlocale};
 #[cfg(windows)]
 use tracing::warn;
 
-use crate::ws::{self, config, TaosResult};
+use crate::ws::{self, TaosResult, config};
 
 pub fn get_system_locale() -> String {
     #[cfg(target_os = "windows")]

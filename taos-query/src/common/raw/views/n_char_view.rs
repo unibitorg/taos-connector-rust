@@ -75,35 +75,39 @@ impl NCharView {
 
     /// Unsafe version for [methods.is_null]
     pub unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.offsets.get_unchecked(row) < 0
+        unsafe { self.offsets.get_unchecked(row) < 0 }
     }
 
     #[inline]
     pub unsafe fn nchar_to_utf8(&self) {
-        if self.version == Version::V3 && *self.is_chars.get() {
-            let mut ptr: *const u8 = std::ptr::null();
-            for offset in self.offsets.iter() {
-                if offset >= 0 {
-                    if ptr.is_null() {
-                        ptr = self.data.as_ptr().offset(offset as isize);
-                        InlineNChar::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize))
-                            .into_inline_str();
-                    } else {
-                        let next = self.data.as_ptr().offset(offset as isize);
-                        if ptr != next {
-                            ptr = next;
+        unsafe {
+            if self.version == Version::V3 && *self.is_chars.get() {
+                let mut ptr: *const u8 = std::ptr::null();
+                for offset in self.offsets.iter() {
+                    if offset >= 0 {
+                        if ptr.is_null() {
+                            ptr = self.data.as_ptr().offset(offset as isize);
                             InlineNChar::<u16>::from_ptr(
                                 self.data.as_ptr().offset(offset as isize),
                             )
                             .into_inline_str();
+                        } else {
+                            let next = self.data.as_ptr().offset(offset as isize);
+                            if ptr != next {
+                                ptr = next;
+                                InlineNChar::<u16>::from_ptr(
+                                    self.data.as_ptr().offset(offset as isize),
+                                )
+                                .into_inline_str();
+                            }
                         }
                     }
                 }
+                *self.is_chars.get() = false;
+                let mut layout = *self.layout();
+                layout.with_nchar_decoded();
+                self.layout.store(layout.as_inner(), Ordering::SeqCst);
             }
-            *self.is_chars.get() = false;
-            let mut layout = *self.layout();
-            layout.with_nchar_decoded();
-            self.layout.store(layout.as_inner(), Ordering::SeqCst);
         }
     }
 
@@ -113,25 +117,29 @@ impl NCharView {
     /// will be changed in-place.
     #[inline]
     pub unsafe fn get_inline_str_unchecked(&self, row: usize) -> Option<&InlineStr> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            self.nchar_to_utf8();
-            Some(InlineStr::<u16>::from_ptr(
-                self.data.as_ptr().offset(offset as isize),
-            ))
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                self.nchar_to_utf8();
+                Some(InlineStr::<u16>::from_ptr(
+                    self.data.as_ptr().offset(offset as isize),
+                ))
+            } else {
+                None
+            }
         }
     }
 
     #[inline]
     pub unsafe fn get_length_unchecked(&self, row: usize) -> Option<usize> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            self.nchar_to_utf8();
-            Some(InlineStr::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                self.nchar_to_utf8();
+                Some(InlineStr::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
+            } else {
+                None
+            }
         }
     }
 
@@ -153,21 +161,25 @@ impl NCharView {
     /// Get UTF-8 string at `row`.
     #[inline]
     pub unsafe fn get_unchecked(&self, row: usize) -> Option<&str> {
-        self.get_inline_str_unchecked(row).map(|s| s.as_str())
+        unsafe { self.get_inline_str_unchecked(row).map(|s| s.as_str()) }
     }
 
     pub unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::NChar), |s| {
-                BorrowedValue::NChar(s.into())
-            })
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::NChar), |s| {
+                    BorrowedValue::NChar(s.into())
+                })
+        }
     }
 
     pub unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        self.nchar_to_utf8();
-        match self.get_unchecked(row) {
-            Some(s) => (Ty::NChar, s.len() as _, s.as_ptr() as _),
-            None => (Ty::NChar, 0, std::ptr::null()),
+        unsafe {
+            self.nchar_to_utf8();
+            match self.get_unchecked(row) {
+                Some(s) => (Ty::NChar, s.len() as _, s.as_ptr() as _),
+                None => (Ty::NChar, 0, std::ptr::null()),
+            }
         }
     }
 
@@ -321,7 +333,17 @@ impl ExactSizeIterator for NCharViewIter<'_> {
 
 #[test]
 fn test_slice() {
-    let data = [None, Some(""), Some("abc"), Some("中文"), None, None, Some("a loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooog string")];
+    let data = [
+        None,
+        Some(""),
+        Some("abc"),
+        Some("中文"),
+        None,
+        None,
+        Some(
+            "a loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooog string",
+        ),
+    ];
     let view = NCharView::from_iter::<&str, _, _, _>(data);
     let slice = view.slice(0..0);
     assert!(slice.is_none());

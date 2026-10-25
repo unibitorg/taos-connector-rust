@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use byteorder::{ByteOrder, LittleEndian};
+use taos_query::RawResult;
 use taos_query::common::{BorrowedValue, ColumnView, Value};
 use taos_query::stmt2::Stmt2BindParam;
-use taos_query::RawResult;
 
 use crate::query::messages::{BindType, ReqId, Stmt2Field, StmtId};
 
@@ -606,7 +606,7 @@ mod tests {
     use bytes::Bytes;
     use taos_query::common::{ColumnView, Timestamp, Ty, Value};
 
-    use super::{bind_params_to_bytes, Stmt2BindParam};
+    use super::{Stmt2BindParam, bind_params_to_bytes};
     use crate::query::messages::BindType;
     use crate::stmt2::Stmt2Field;
 

@@ -1,19 +1,19 @@
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use byteorder::{ByteOrder, LittleEndian};
 use taos_query::common::{Field, Precision};
 use taos_query::stmt2::{Stmt2AsyncBindable, Stmt2BindParam, Stmt2Bindable};
 use taos_query::util::generate_req_id;
-use taos_query::{block_in_place_or_global, AsyncQueryable, Queryable, RawResult};
-use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
+use taos_query::{AsyncQueryable, Queryable, RawResult, block_in_place_or_global};
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use tracing::Instrument;
 
-use crate::query::asyn::{fetch_binary, ConnState, QueryMetrics};
-use crate::query::messages::{ReqId, Stmt2Field, StmtId, WsRecvData, WsResArgs, WsSend};
 use crate::query::WsTaos;
+use crate::query::asyn::{ConnState, QueryMetrics, fetch_binary};
+use crate::query::messages::{ReqId, Stmt2Field, StmtId, WsRecvData, WsResArgs, WsSend};
 use crate::{ResultSet, Taos};
 
 mod bind;
@@ -473,7 +473,8 @@ impl Stmt2Inner {
         tracing::trace!(
             "stmt2 recover, id: {}, req_id: {}, action: {action:?}, is_complete: {is_complete}, \
             single_stb_insert: {single_stb_insert}, single_table_bind_once: {single_table_bind_once}, sql: {sql}",
-            self.id, self.req_id().await
+            self.id,
+            self.req_id().await
         );
 
         if !is_complete {
@@ -736,8 +737,8 @@ mod tests {
     use taos_query::stmt2::Stmt2BindParam;
     use taos_query::{AsyncFetchable, AsyncQueryable, AsyncTBuilder};
 
-    use crate::stmt2::Stmt2;
     use crate::TaosBuilder;
+    use crate::stmt2::Stmt2;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stmt2_insert_single_row() -> anyhow::Result<()> {
@@ -2144,8 +2145,8 @@ mod cloud_tests {
     use taos_query::stmt2::Stmt2BindParam;
     use taos_query::{AsyncFetchable, AsyncQueryable, AsyncTBuilder};
 
-    use crate::stmt2::Stmt2;
     use crate::TaosBuilder;
+    use crate::stmt2::Stmt2;
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_stmt2() -> anyhow::Result<()> {
@@ -2242,8 +2243,8 @@ mod cloud_tests {
 mod recover_tests {
     use std::sync::Arc;
 
-    use futures::future::try_join_all;
     use futures::TryStreamExt;
+    use futures::future::try_join_all;
     use rand::Rng;
     use serde::Deserialize;
     use serde_json::Value;

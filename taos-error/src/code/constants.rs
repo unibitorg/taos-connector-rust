@@ -98,7 +98,9 @@ pub const fn error_str_of(code: u32) -> Option<&'static str> {
         0x0216 => Some("Syntax error in SQL"),
         0x0217 => Some("Database not specified or available"),
         0x0218 => Some("Table does not exist"),
-        0x0219 => Some("SQL statement too long, check maxSQLLength config (sql statement too long)"),
+        0x0219 => {
+            Some("SQL statement too long, check maxSQLLength config (sql statement too long)")
+        }
         0x021A => Some("File is empty"),
         0x021B => Some("Syntax error in Line"),
         0x021C => Some("No table meta cached"),
@@ -265,9 +267,13 @@ pub const fn error_str_of(code: u32) -> Option<&'static str> {
         0x03D2 => Some("Invalid stage to kill"),
         0x03D3 => Some("Conflict transaction not completed"),
         0x03D4 => Some("Transaction commitlog is null"),
-        0x03D5 => Some("Unable to establish connection While execute transaction and will continue in the background"),
+        0x03D5 => Some(
+            "Unable to establish connection While execute transaction and will continue in the background",
+        ),
         0x03D6 => Some("Last Transaction not finished"),
-        0x03D7 => Some("Sync timeout While execute transaction and will continue in the background"),
+        0x03D7 => {
+            Some("Sync timeout While execute transaction and will continue in the background")
+        }
         0x03DF => Some("Unknown transaction error"),
         0x03E0 => Some("Topic already exists"),
         0x03E1 => Some("Topic not exist"),
@@ -355,7 +361,9 @@ pub const fn error_str_of(code: u32) -> Option<&'static str> {
         0x0532 => Some("Vnode didn't catch up its leader"),
         0x0533 => Some("Vnode already is a voter"),
         0x0534 => Some("Vnode directory already exist"),
-        0x0535 => Some("Single replica vnode data will lost permanently after this operation, if you make sure this, please use drop dnode <id> unsafe to execute"),
+        0x0535 => Some(
+            "Single replica vnode data will lost permanently after this operation, if you make sure this, please use drop dnode <id> unsafe to execute",
+        ),
         0x0600 => Some("Invalid table ID"),
         0x0601 => Some("Invalid table type"),
         0x0602 => Some("Invalid table schema version"),
@@ -541,12 +549,18 @@ pub const fn error_str_of(code: u32) -> Option<&'static str> {
         0x2648 => Some("Invalid password"),
         0x2649 => Some("Invalid alter table statement"),
         0x264A => Some("Primary timestamp column cannot be dropped"),
-        0x264B => Some("Only binary/nchar column length could be modified, and the length can only be increased, not decreased"),
+        0x264B => Some(
+            "Only binary/nchar column length could be modified, and the length can only be increased, not decreased",
+        ),
         0x264C => Some("Invalid tbname pseudo column"),
         0x264D => Some("Invalid function name"),
         0x264E => Some("Comment too long"),
-        0x264F => Some("Some functions are allowed only in the SELECT list of a query. And, cannot be mixed with other non scalar functions or columns."),
-        0x2650 => Some("Window query not supported, since the result of subquery not include valid timestamp column"),
+        0x264F => Some(
+            "Some functions are allowed only in the SELECT list of a query. And, cannot be mixed with other non scalar functions or columns.",
+        ),
+        0x2650 => Some(
+            "Window query not supported, since the result of subquery not include valid timestamp column",
+        ),
         0x2651 => Some("No columns can be dropped"),
         0x2652 => Some("Only tag can be json type"),
         0x2653 => Some("Value too long for column/tag"),
@@ -1006,7 +1020,12 @@ mod tests {
             Some("Conflict transaction not completed")
         );
         assert_eq!(error_str_of(0x03D4), Some("Transaction commitlog is null"));
-        assert_eq!(error_str_of(0x03D5), Some("Unable to establish connection While execute transaction and will continue in the background"));
+        assert_eq!(
+            error_str_of(0x03D5),
+            Some(
+                "Unable to establish connection While execute transaction and will continue in the background"
+            )
+        );
         assert_eq!(error_str_of(0x03D6), Some("Last Transaction not finished"));
         assert_eq!(
             error_str_of(0x03D7),
@@ -1141,7 +1160,12 @@ mod tests {
         );
         assert_eq!(error_str_of(0x0533), Some("Vnode already is a voter"));
         assert_eq!(error_str_of(0x0534), Some("Vnode directory already exist"));
-        assert_eq!(error_str_of(0x0535), Some("Single replica vnode data will lost permanently after this operation, if you make sure this, please use drop dnode <id> unsafe to execute"));
+        assert_eq!(
+            error_str_of(0x0535),
+            Some(
+                "Single replica vnode data will lost permanently after this operation, if you make sure this, please use drop dnode <id> unsafe to execute"
+            )
+        );
         assert_eq!(error_str_of(0x0600), Some("Invalid table ID"));
         assert_eq!(error_str_of(0x0601), Some("Invalid table type"));
         assert_eq!(error_str_of(0x0602), Some("Invalid table schema version"));
@@ -1468,12 +1492,27 @@ mod tests {
             error_str_of(0x264A),
             Some("Primary timestamp column cannot be dropped")
         );
-        assert_eq!(error_str_of(0x264B), Some("Only binary/nchar column length could be modified, and the length can only be increased, not decreased"));
+        assert_eq!(
+            error_str_of(0x264B),
+            Some(
+                "Only binary/nchar column length could be modified, and the length can only be increased, not decreased"
+            )
+        );
         assert_eq!(error_str_of(0x264C), Some("Invalid tbname pseudo column"));
         assert_eq!(error_str_of(0x264D), Some("Invalid function name"));
         assert_eq!(error_str_of(0x264E), Some("Comment too long"));
-        assert_eq!(error_str_of(0x264F), Some("Some functions are allowed only in the SELECT list of a query. And, cannot be mixed with other non scalar functions or columns."));
-        assert_eq!(error_str_of(0x2650), Some("Window query not supported, since the result of subquery not include valid timestamp column"));
+        assert_eq!(
+            error_str_of(0x264F),
+            Some(
+                "Some functions are allowed only in the SELECT list of a query. And, cannot be mixed with other non scalar functions or columns."
+            )
+        );
+        assert_eq!(
+            error_str_of(0x2650),
+            Some(
+                "Window query not supported, since the result of subquery not include valid timestamp column"
+            )
+        );
         assert_eq!(error_str_of(0x2651), Some("No columns can be dropped"));
         assert_eq!(error_str_of(0x2652), Some("Only tag can be json type"));
         assert_eq!(error_str_of(0x2653), Some("Value too long for column/tag"));

@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::time::Duration;
 use std::{ptr, slice};
 
@@ -10,9 +10,9 @@ use taos_ws::query::Error;
 use taos_ws::{Offset, Taos};
 use tracing::{debug, error};
 
-use crate::ws::error::{set_err_and_get_code, TaosError, TaosMaybeError};
+use crate::ws::error::{TaosError, TaosMaybeError, set_err_and_get_code};
 use crate::ws::{
-    ResultSet, ResultSetOperations, TaosResult, TAOS, TAOS_FIELD, TAOS_FIELD_E, TAOS_RES, TAOS_ROW,
+    ResultSet, ResultSetOperations, TAOS, TAOS_FIELD, TAOS_FIELD_E, TAOS_RES, TAOS_ROW, TaosResult,
 };
 
 #[repr(C)]
@@ -36,7 +36,7 @@ pub enum TSDB_SML_TIMESTAMP_TYPE {
     TSDB_SML_TIMESTAMP_NANO_SECONDS,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_schemaless_insert_raw(
     taos: *mut TAOS,
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_schemaless_insert_raw_with_reqid(
     taos: *mut TAOS,
@@ -83,7 +83,7 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_with_reqid(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl(
     taos: *mut TAOS,
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl_with_reqid(
@@ -133,7 +133,7 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl_with_reqid(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
@@ -147,7 +147,9 @@ pub unsafe extern "C" fn taos_schemaless_insert_raw_ttl_with_reqid_tbname_key(
     reqid: i64,
     tbnameKey: *mut c_char,
 ) -> *mut TAOS_RES {
-    debug!("taos_schemaless_insert_raw_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, len: {len}, total_rows: {totalRows:?}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}");
+    debug!(
+        "taos_schemaless_insert_raw_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, len: {len}, total_rows: {totalRows:?}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}"
+    );
     match sml_insert_raw(
         taos, lines, len, totalRows, protocol, precision, ttl, reqid, tbnameKey,
     ) {
@@ -233,7 +235,7 @@ unsafe fn sml_insert_raw(
     )))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_schemaless_insert(
     taos: *mut TAOS,
@@ -254,7 +256,7 @@ pub unsafe extern "C" fn taos_schemaless_insert(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_schemaless_insert_with_reqid(
     taos: *mut TAOS,
@@ -276,7 +278,7 @@ pub unsafe extern "C" fn taos_schemaless_insert_with_reqid(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_schemaless_insert_ttl(
     taos: *mut TAOS,
@@ -298,7 +300,7 @@ pub unsafe extern "C" fn taos_schemaless_insert_ttl(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_schemaless_insert_ttl_with_reqid(
     taos: *mut TAOS,
@@ -321,7 +323,7 @@ pub unsafe extern "C" fn taos_schemaless_insert_ttl_with_reqid(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 #[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn taos_schemaless_insert_ttl_with_reqid_tbname_key(
@@ -334,7 +336,9 @@ pub unsafe extern "C" fn taos_schemaless_insert_ttl_with_reqid_tbname_key(
     reqid: i64,
     tbnameKey: *mut c_char,
 ) -> *mut TAOS_RES {
-    debug!("taos_schemaless_insert_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, num_lines: {numLines}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}");
+    debug!(
+        "taos_schemaless_insert_ttl_with_reqid_tbname_key start, taos: {taos:?}, lines: {lines:?}, num_lines: {numLines}, protocol: {protocol}, precision: {precision}, ttl: {ttl}, reqid: {reqid}, tbname_key: {tbnameKey:?}"
+    );
     match sml_insert(
         taos, lines, numLines, protocol, precision, ttl, reqid, tbnameKey,
     ) {

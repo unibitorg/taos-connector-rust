@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_ulong, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_ulong, c_void};
 use std::{ptr, slice};
 
 use taos_error::Code;
@@ -12,11 +12,11 @@ use taos_ws::{Stmt2, Taos};
 use tracing::{debug, error};
 
 use crate::ws::error::{
-    clear_err_and_ret_succ, format_errno, set_err_and_get_code, taos_errstr, TaosError,
-    TaosMaybeError,
+    TaosError, TaosMaybeError, clear_err_and_ret_succ, format_errno, set_err_and_get_code,
+    taos_errstr,
 };
 use crate::ws::query::QueryResultSet;
-use crate::ws::{ResultSet, TaosResult, TAOS, TAOS_FIELD_E, TAOS_RES};
+use crate::ws::{ResultSet, TAOS, TAOS_FIELD_E, TAOS_RES, TaosResult};
 
 #[allow(non_camel_case_types)]
 pub type TAOS_STMT = c_void;
@@ -125,12 +125,12 @@ impl TaosStmt {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_init(taos: *mut TAOS) -> *mut TAOS_STMT {
     taos_stmt_init_with_reqid(taos, generate_req_id() as _)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_init_with_reqid(taos: *mut TAOS, reqid: i64) -> *mut TAOS_STMT {
     debug!("taos_stmt_init_with_reqid start, taos: {taos:?}, reqid: {reqid}");
     let taos_stmt: TaosMaybeError<TaosStmt> = match stmt_init(taos, reqid as _, false, false) {
@@ -147,7 +147,7 @@ pub unsafe extern "C" fn taos_stmt_init_with_reqid(taos: *mut TAOS, reqid: i64) 
     res
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_init_with_options(
     taos: *mut TAOS,
     options: *mut TAOS_STMT_OPTIONS,
@@ -183,7 +183,9 @@ unsafe fn stmt_init(
     single_stb_insert: bool,
     single_table_bind_once: bool,
 ) -> TaosResult<TaosStmt> {
-    debug!("stmt_init start, req_id: 0x{req_id:x}, single_stb_insert: {single_stb_insert}, single_table_bind_once: {single_table_bind_once}");
+    debug!(
+        "stmt_init start, req_id: 0x{req_id:x}, single_stb_insert: {single_stb_insert}, single_table_bind_once: {single_table_bind_once}"
+    );
 
     let taos = (taos as *mut Taos)
         .as_mut()
@@ -202,7 +204,7 @@ unsafe fn stmt_init(
     Ok(taos_stmt)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_prepare(
     stmt: *mut TAOS_STMT,
     sql: *const c_char,
@@ -276,7 +278,7 @@ pub unsafe extern "C" fn taos_stmt_prepare(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_set_tbname_tags(
     stmt: *mut TAOS_STMT,
     name: *const c_char,
@@ -290,7 +292,7 @@ pub unsafe extern "C" fn taos_stmt_set_tbname_tags(
     taos_stmt_set_tags(stmt, tags)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_set_tbname(stmt: *mut TAOS_STMT, name: *const c_char) -> c_int {
     debug!("taos_stmt_set_tbname start, stmt: {stmt:?}, name: {name:?}");
 
@@ -326,7 +328,7 @@ pub unsafe extern "C" fn taos_stmt_set_tbname(stmt: *mut TAOS_STMT, name: *const
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_set_tags(
     stmt: *mut TAOS_STMT,
     tags: *mut TAOS_MULTI_BIND,
@@ -390,7 +392,7 @@ pub unsafe extern "C" fn taos_stmt_set_tags(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_set_sub_tbname(
     stmt: *mut TAOS_STMT,
     name: *const c_char,
@@ -398,14 +400,16 @@ pub unsafe extern "C" fn taos_stmt_set_sub_tbname(
     taos_stmt_set_tbname(stmt, name)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_stmt_get_tag_fields(
     stmt: *mut TAOS_STMT,
     fieldNum: *mut c_int,
     fields: *mut *mut TAOS_FIELD_E,
 ) -> c_int {
-    debug!("taos_stmt_get_tag_fields start, stmt: {stmt:?}, field_num: {fieldNum:?}, fields: {fields:?}");
+    debug!(
+        "taos_stmt_get_tag_fields start, stmt: {stmt:?}, field_num: {fieldNum:?}, fields: {fields:?}"
+    );
 
     let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt>).as_mut() {
         Some(maybe_err) => maybe_err,
@@ -473,14 +477,16 @@ pub unsafe extern "C" fn taos_stmt_get_tag_fields(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_stmt_get_col_fields(
     stmt: *mut TAOS_STMT,
     fieldNum: *mut c_int,
     fields: *mut *mut TAOS_FIELD_E,
 ) -> c_int {
-    debug!("taos_stmt_get_col_fields start, stmt: {stmt:?}, field_num: {fieldNum:?}, fields: {fields:?}");
+    debug!(
+        "taos_stmt_get_col_fields start, stmt: {stmt:?}, field_num: {fieldNum:?}, fields: {fields:?}"
+    );
 
     let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt>).as_mut() {
         Some(maybe_err) => maybe_err,
@@ -548,7 +554,7 @@ pub unsafe extern "C" fn taos_stmt_get_col_fields(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_reclaim_fields(stmt: *mut TAOS_STMT, fields: *mut TAOS_FIELD_E) {
     debug!("taos_stmt_reclaim_fields start, stmt: {stmt:?}, fields: {fields:?}");
 
@@ -607,7 +613,7 @@ pub unsafe extern "C" fn taos_stmt_reclaim_fields(stmt: *mut TAOS_STMT, fields: 
     )));
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_is_insert(stmt: *mut TAOS_STMT, insert: *mut c_int) -> c_int {
     debug!("taos_stmt_is_insert start, stmt: {stmt:?}, insert: {insert:?}");
 
@@ -648,7 +654,7 @@ pub unsafe extern "C" fn taos_stmt_is_insert(stmt: *mut TAOS_STMT, insert: *mut 
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_num_params(stmt: *mut TAOS_STMT, nums: *mut c_int) -> c_int {
     debug!("taos_stmt_num_params start, stmt: {stmt:?}, nums: {nums:?}");
 
@@ -687,7 +693,7 @@ pub unsafe extern "C" fn taos_stmt_num_params(stmt: *mut TAOS_STMT, nums: *mut c
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_get_param(
     stmt: *mut TAOS_STMT,
     idx: c_int,
@@ -770,7 +776,7 @@ pub unsafe extern "C" fn taos_stmt_get_param(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_bind_param(
     stmt: *mut TAOS_STMT,
     bind: *mut TAOS_MULTI_BIND,
@@ -832,7 +838,7 @@ pub unsafe extern "C" fn taos_stmt_bind_param(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_bind_param_batch(
     stmt: *mut TAOS_STMT,
     bind: *mut TAOS_MULTI_BIND,
@@ -902,7 +908,7 @@ pub unsafe extern "C" fn taos_stmt_bind_param_batch(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn taos_stmt_bind_single_param_batch(
     stmt: *mut TAOS_STMT,
@@ -963,7 +969,7 @@ pub unsafe extern "C" fn taos_stmt_bind_single_param_batch(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_add_batch(stmt: *mut TAOS_STMT) -> c_int {
     debug!("taos_stmt_add_batch start, stmt: {stmt:?}");
 
@@ -1009,7 +1015,7 @@ pub unsafe extern "C" fn taos_stmt_add_batch(stmt: *mut TAOS_STMT) -> c_int {
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_execute(stmt: *mut TAOS_STMT) -> c_int {
     debug!("taos_stmt_execute start, stmt: {stmt:?}");
 
@@ -1056,7 +1062,7 @@ pub unsafe extern "C" fn taos_stmt_execute(stmt: *mut TAOS_STMT) -> c_int {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_use_result(stmt: *mut TAOS_STMT) -> *mut TAOS_RES {
     debug!("taos_stmt_use_result start, stmt: {stmt:?}");
 
@@ -1092,7 +1098,7 @@ pub unsafe extern "C" fn taos_stmt_use_result(stmt: *mut TAOS_STMT) -> *mut TAOS
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_close(stmt: *mut TAOS_STMT) -> c_int {
     debug!("taos_stmt_close, stmt: {stmt:?}");
     if stmt.is_null() {
@@ -1102,12 +1108,12 @@ pub unsafe extern "C" fn taos_stmt_close(stmt: *mut TAOS_STMT) -> c_int {
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_errstr(stmt: *mut TAOS_STMT) -> *mut c_char {
     taos_errstr(stmt as _) as _
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_affected_rows(stmt: *mut TAOS_STMT) -> c_int {
     debug!("taos_stmt_affected_rows start, stmt: {stmt:?}");
 
@@ -1129,7 +1135,7 @@ pub unsafe extern "C" fn taos_stmt_affected_rows(stmt: *mut TAOS_STMT) -> c_int 
     stmt2.affected_rows() as _
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt_affected_rows_once(stmt: *mut TAOS_STMT) -> c_int {
     debug!("taos_stmt_affected_rows_once start, stmt: {stmt:?}");
 

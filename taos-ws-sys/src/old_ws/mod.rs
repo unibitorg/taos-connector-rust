@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::fmt::{Debug, Display};
 use std::os::raw::{c_char, c_int};
 use std::str::Utf8Error;
@@ -15,12 +15,12 @@ use taos_query::common::{
     SmlDataBuilderError, Timestamp, Ty,
 };
 use taos_query::prelude::RawError;
-use taos_query::util::{hex, InlineBytes, InlineNChar, InlineStr};
+use taos_query::util::{InlineBytes, InlineNChar, InlineStr, hex};
 use taos_query::{DsnError, Fetchable, Queryable, TBuilder};
+use taos_ws::TaosBuilder;
 use taos_ws::consumer::Offset;
 pub use taos_ws::query::asyn::WS_ERROR_NO;
 use taos_ws::query::{Error, ResultSet, Taos};
-use taos_ws::TaosBuilder;
 
 pub mod stmt;
 pub mod tmq;
@@ -887,7 +887,7 @@ unsafe fn connect_with_dsn(dsn: *const c_char) -> WsTaos {
 /// ```c
 /// ws_enable_log("debug");
 /// ```
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_enable_log(log_level: *const c_char) -> i32 {
     static ONCE_INIT: std::sync::Once = std::sync::Once::new();
 
@@ -912,7 +912,7 @@ pub unsafe extern "C" fn ws_enable_log(log_level: *const c_char) -> i32 {
     Code::SUCCESS.into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn ws_data_type(r#type: i32) -> *const c_char {
     match Ty::from_u8_option(r#type as _) {
         Some(ty) => ty.tsdb_name(),
@@ -936,7 +936,7 @@ pub extern "C" fn ws_data_type(r#type: i32) -> *const c_char {
 ///   exit(-1);
 /// }
 /// ```
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_connect(dsn: *const c_char) -> *mut WS_TAOS {
     match connect_with_dsn(dsn) {
         Ok(client) => Box::into_raw(Box::new(client)) as _,
@@ -947,7 +947,7 @@ pub unsafe extern "C" fn ws_connect(dsn: *const c_char) -> *mut WS_TAOS {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(static_mut_refs)]
 /// Same to taos_get_server_info, returns server version info.
 pub unsafe extern "C" fn ws_get_server_info(taos: *mut WS_TAOS) -> *const c_char {
@@ -969,7 +969,7 @@ pub unsafe extern "C" fn ws_get_server_info(taos: *mut WS_TAOS) -> *const c_char
     version_info.as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Same to taos_close. This should always be called after everything done with the connection.
 pub unsafe extern "C" fn ws_close(taos: *mut WS_TAOS) -> i32 {
     if !taos.is_null() {
@@ -1019,7 +1019,7 @@ unsafe fn query_with_sql_timeout(
     Ok(WsResultSet::Sql(WsSqlResultSet::new(rs)))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Query with a sql command, returns pointer to result set.
 ///
 /// Please always use `ws_errno` to check it work and `ws_free_result` to free memory.
@@ -1027,7 +1027,7 @@ pub unsafe extern "C" fn ws_query(taos: *mut WS_TAOS, sql: *const c_char) -> *mu
     ws_query_with_reqid(taos, sql, get_req_id(taos))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_query_with_reqid(
     taos: *mut WS_TAOS,
     sql: *const c_char,
@@ -1039,7 +1039,7 @@ pub unsafe extern "C" fn ws_query_with_reqid(
     Box::into_raw(Box::new(res)) as _
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stop_query(rs: *mut WS_RES) -> i32 {
     match (rs as *mut WsMaybeError<WsResultSet>)
         .as_mut()
@@ -1053,7 +1053,7 @@ pub unsafe extern "C" fn ws_stop_query(rs: *mut WS_RES) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Query a sql with timeout.
 ///
 /// Please always use `ws_errno` to check it work and `ws_free_result` to free memory.
@@ -1068,7 +1068,7 @@ pub unsafe extern "C" fn ws_query_timeout(
 }
 
 /// Get taosc execution timing duration as nanoseconds.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_take_timing(rs: *mut WS_RES) -> i64 {
     match (rs as *mut WsMaybeError<WsResultSet>)
         .as_mut()
@@ -1079,7 +1079,7 @@ pub unsafe extern "C" fn ws_take_timing(rs: *mut WS_RES) -> i64 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Always use this to ensure that the query is executed correctly.
 pub unsafe extern "C" fn ws_errno(rs: *mut WS_RES) -> i32 {
     if rs.is_null() {
@@ -1094,7 +1094,7 @@ pub unsafe extern "C" fn ws_errno(rs: *mut WS_RES) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Use this method to get a formatted error string when query errno is not 0.
 pub unsafe extern "C" fn ws_errstr(rs: *mut WS_RES) -> *const c_char {
     if rs.is_null() {
@@ -1112,7 +1112,7 @@ pub unsafe extern "C" fn ws_errstr(rs: *mut WS_RES) -> *const c_char {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Works exactly the same to taos_affected_rows.
 pub unsafe extern "C" fn ws_affected_rows(rs: *const WS_RES) -> i32 {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1124,7 +1124,7 @@ pub unsafe extern "C" fn ws_affected_rows(rs: *const WS_RES) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Works exactly the same to taos_affected_rows64.
 pub unsafe extern "C" fn ws_affected_rows64(rs: *const WS_RES) -> i64 {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1136,7 +1136,7 @@ pub unsafe extern "C" fn ws_affected_rows64(rs: *const WS_RES) -> i64 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// use db.
 pub unsafe extern "C" fn ws_select_db(taos: *mut WS_TAOS, db: *const c_char) -> i32 {
     tracing::trace!("db {:?}", CStr::from_ptr(db));
@@ -1145,7 +1145,7 @@ pub unsafe extern "C" fn ws_select_db(taos: *mut WS_TAOS, db: *const c_char) -> 
     let client = match client {
         Some(t) => t,
         None => {
-            return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is invallid"))
+            return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "taos is invallid"));
         }
     };
 
@@ -1153,7 +1153,7 @@ pub unsafe extern "C" fn ws_select_db(taos: *mut WS_TAOS, db: *const c_char) -> 
     let db = match db {
         Ok(t) => t,
         Err(_) => {
-            return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "db is invallid"))
+            return set_error_and_get_code(WsError::new(Code::INVALID_PARA, "db is invallid"));
         }
     };
 
@@ -1166,7 +1166,7 @@ pub unsafe extern "C" fn ws_select_db(taos: *mut WS_TAOS, db: *const c_char) -> 
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// If the query is update query or not
 pub unsafe extern "C" fn ws_get_client_info() -> *const c_char {
     static VERSION_INFO: OnceLock<CString> = OnceLock::new();
@@ -1175,7 +1175,7 @@ pub unsafe extern "C" fn ws_get_client_info() -> *const c_char {
         .as_ptr()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Returns number of fields in current result set.
 pub unsafe extern "C" fn ws_field_count(rs: *const WS_RES) -> i32 {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1187,7 +1187,7 @@ pub unsafe extern "C" fn ws_field_count(rs: *const WS_RES) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// If the element is update query or not
 pub unsafe extern "C" fn ws_is_update_query(rs: *const WS_RES) -> bool {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1199,7 +1199,7 @@ pub unsafe extern "C" fn ws_is_update_query(rs: *const WS_RES) -> bool {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Works like taos_fetch_fields, users should use it along with a `num_of_fields`.
 pub unsafe extern "C" fn ws_fetch_fields(rs: *mut WS_RES) -> *const WS_FIELD {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1214,7 +1214,7 @@ pub unsafe extern "C" fn ws_fetch_fields(rs: *mut WS_RES) -> *const WS_FIELD {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// To fetch v2-compatible fields structs.
 pub unsafe extern "C" fn ws_fetch_fields_v2(rs: *mut WS_RES) -> *const WS_FIELD_V2 {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1229,7 +1229,7 @@ pub unsafe extern "C" fn ws_fetch_fields_v2(rs: *mut WS_RES) -> *const WS_FIELD_
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 /// Works like taos_fetch_raw_block, it will always return block with format v3.
 pub unsafe extern "C" fn ws_fetch_raw_block(
@@ -1259,7 +1259,7 @@ pub unsafe extern "C" fn ws_fetch_raw_block(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// If the element in (row, column) is null or not
 pub unsafe extern "C" fn ws_is_null(rs: *const WS_RES, row: i32, col: i32) -> bool {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1274,7 +1274,7 @@ pub unsafe extern "C" fn ws_is_null(rs: *const WS_RES, row: i32, col: i32) -> bo
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Works like taos_fetch_row
 pub unsafe extern "C" fn ws_fetch_row(rs: *mut WS_RES) -> WS_ROW {
     match (rs as *mut WsMaybeError<WsResultSet>).as_mut() {
@@ -1298,7 +1298,7 @@ pub unsafe extern "C" fn ws_fetch_row(rs: *mut WS_RES) -> WS_ROW {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Returns number of fields in current result set.
 pub unsafe extern "C" fn ws_num_fields(rs: *const WS_RES) -> i32 {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1310,7 +1310,7 @@ pub unsafe extern "C" fn ws_num_fields(rs: *const WS_RES) -> i32 {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Same to taos_free_result. Every websocket result-set object should be freed with this method.
 pub unsafe extern "C" fn ws_free_result(rs: *mut WS_RES) -> i32 {
     if !rs.is_null() {
@@ -1319,7 +1319,7 @@ pub unsafe extern "C" fn ws_free_result(rs: *mut WS_RES) -> i32 {
     Code::SUCCESS.into()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Same to taos_result_precision.
 pub unsafe extern "C" fn ws_result_precision(rs: *const WS_RES) -> i32 {
     match (rs as *mut WsMaybeError<WsResultSet>)
@@ -1347,7 +1347,7 @@ pub unsafe extern "C" fn ws_result_precision(rs: *const WS_RES) -> i32 {
 ///   printf("ts: %d\n", *timestamp);
 /// }
 /// ```
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_get_value_in_block(
     rs: *mut WS_RES,
     row: i32,
@@ -1377,7 +1377,7 @@ pub unsafe extern "C" fn ws_get_value_in_block(
 ///
 /// This function use a thread-local variable to print, it may works in most cases but not always be thread-safe,
 ///  use it only if it work as you expected.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_timestamp_to_rfc3339(
     dest: *mut u8,
     raw: i64,
@@ -1392,7 +1392,7 @@ pub unsafe extern "C" fn ws_timestamp_to_rfc3339(
     std::ptr::copy_nonoverlapping(s.as_ptr(), dest, s.len());
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_print_row(
     str: *mut c_char,
     str_len: i32,
@@ -1559,7 +1559,7 @@ pub unsafe extern "C" fn ws_print_row(
     len
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 /// Same to taos_get_current_db.
 pub unsafe extern "C" fn ws_get_current_db(
     taos: *mut WS_TAOS,
@@ -1616,7 +1616,7 @@ pub unsafe extern "C" fn ws_get_current_db(
 }
 
 /*  --------------------------schemaless INTERFACE------------------------------- */
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_schemaless_insert_raw(
     taos: *mut WS_TAOS,
     lines: *const c_char,
@@ -1637,7 +1637,7 @@ pub unsafe extern "C" fn ws_schemaless_insert_raw(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_schemaless_insert_raw_with_reqid(
     taos: *mut WS_TAOS,
     lines: *const c_char,
@@ -1652,7 +1652,7 @@ pub unsafe extern "C" fn ws_schemaless_insert_raw_with_reqid(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_schemaless_insert_raw_ttl(
     taos: *mut WS_TAOS,
     lines: *const c_char,
@@ -1674,7 +1674,7 @@ pub unsafe extern "C" fn ws_schemaless_insert_raw_ttl(
     )
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_schemaless_insert_raw_ttl_with_reqid(
     taos: *mut WS_TAOS,
     lines: *const c_char,
@@ -1811,12 +1811,13 @@ mod tests {
             let err = CStr::from_ptr(ws_errstr(rs) as _);
             // Incomplete SQL statement
             assert!(code != 0);
-            assert!(err
-                .to_str()
-                .unwrap()
-                .match_indices("Incomplete SQL statement")
-                .next()
-                .is_some());
+            assert!(
+                err.to_str()
+                    .unwrap()
+                    .match_indices("Incomplete SQL statement")
+                    .next()
+                    .is_some()
+            );
             assert_eq!(ws_free_result(rs), 0);
 
             assert_eq!(ws_close(taos), 0);

@@ -1,5 +1,5 @@
 use std::cell::UnsafeCell;
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{CStr, CString, c_char};
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -8,12 +8,12 @@ use std::time::Duration;
 use anyhow::Context;
 use once_cell::sync::OnceCell;
 use raw::{ApiEntry, BlockState, RawRes, RawTaos};
+use taos_query::RawError;
 use taos_query::prelude::{Field, Precision, RawBlock, RawMeta, RawResult};
 use taos_query::util::Edition;
-use taos_query::RawError;
 use tokio::sync::oneshot;
 use tokio::{select, task, time};
-use tracing::{warn, Instrument};
+use tracing::{Instrument, warn};
 
 const MAX_CONNECT_RETRIES: u8 = 2;
 
@@ -44,7 +44,7 @@ pub mod prelude {
 
 #[macro_export(local_inner_macros)]
 macro_rules! err_or {
-    ($res:ident, $code:expr, $ret:expr) => {
+    ($res:ident, $code:expr_2021, $ret:expr_2021) => {
         unsafe {
             let code: Code = { $code }.into();
             if code.success() {
@@ -54,10 +54,10 @@ macro_rules! err_or {
             }
         }
     };
-    ($res:ident, $code:expr) => {
+    ($res:ident, $code:expr_2021) => {
         err_or!($res, $code, ())
     };
-    ($code:expr, $ret:expr) => {
+    ($code:expr_2021, $ret:expr_2021) => {
         unsafe {
             let code: Code = { $code }.into();
             if code.success() {
@@ -67,7 +67,7 @@ macro_rules! err_or {
             }
         }
     };
-    ($code:expr) => {
+    ($code:expr_2021) => {
         err_or!($code, ())
     };
 }
@@ -544,7 +544,9 @@ impl taos_query::TBuilder for TaosBuilder {
                     expired.trim() == "false" || expired.trim() == "unlimited",
                 )
             } else {
-                warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };
@@ -571,7 +573,9 @@ impl taos_query::TBuilder for TaosBuilder {
                     !(expired.trim() == "false" || expired.trim() == "unlimited"),
                 )
             } else {
-                warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };
@@ -712,7 +716,9 @@ impl taos_query::AsyncTBuilder for TaosBuilder {
                     expired.trim() == "false" || expired.trim() == "unlimited",
                 )
             } else {
-                warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };
@@ -750,7 +756,9 @@ impl taos_query::AsyncTBuilder for TaosBuilder {
                     !(expired.trim() == "false" || expired.trim() == "unlimited"),
                 )
             } else {
-                warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };

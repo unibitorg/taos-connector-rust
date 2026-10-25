@@ -5,7 +5,7 @@ use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use serde_with::{serde_as, NoneAsEmptyString};
+use serde_with::{NoneAsEmptyString, serde_as};
 use taos_query::common::{Field, Precision, Ty};
 use taos_query::prelude::RawError;
 use taos_query::tmq::{Assignment, VGroupId};

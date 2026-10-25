@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_int, c_ulong, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_ulong, c_void};
 use std::{ptr, slice, str};
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -9,11 +9,11 @@ use taos_query::util::generate_req_id;
 use taos_query::{block_in_place_or_global, global_tokio_runtime};
 use taos_ws::query::{BindType, Stmt2Field};
 use taos_ws::{Stmt2, Taos};
-use tracing::{debug, error, trace, Instrument};
+use tracing::{Instrument, debug, error, trace};
 
 use crate::ws::error::*;
 use crate::ws::query::QueryResultSet;
-use crate::ws::{ResultSet, SafePtr, TaosResult, __taos_async_fn_t, TAOS, TAOS_RES};
+use crate::ws::{__taos_async_fn_t, ResultSet, SafePtr, TAOS, TAOS_RES, TaosResult};
 
 #[allow(non_camel_case_types)]
 pub type TAOS_STMT2 = c_void;
@@ -82,7 +82,7 @@ pub struct TAOS_FIELD_ALL {
     pub field_type: u8,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_init(
     taos: *mut TAOS,
     option: *mut TAOS_STMT2_OPTION,
@@ -130,7 +130,9 @@ unsafe fn stmt2_init(taos: *mut TAOS, option: *mut TAOS_STMT2_OPTION) -> TaosRes
             None => (generate_req_id(), false, false, None, ptr::null_mut()),
         };
 
-    debug!("stmt2_init, req_id: 0x{req_id:x}, single_stb_insert: {single_stb_insert}, single_table_bind_once: {single_table_bind_once}, async_exec_fn: {async_exec_fn:?}, userdata: {userdata:?}");
+    debug!(
+        "stmt2_init, req_id: 0x{req_id:x}, single_stb_insert: {single_stb_insert}, single_table_bind_once: {single_table_bind_once}, async_exec_fn: {async_exec_fn:?}, userdata: {userdata:?}"
+    );
 
     block_in_place_or_global(stmt2.init_with_options(
         req_id,
@@ -141,7 +143,7 @@ unsafe fn stmt2_init(taos: *mut TAOS, option: *mut TAOS_STMT2_OPTION) -> TaosRes
     Ok(TaosStmt2::new(stmt2, async_exec_fn, userdata))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_prepare(
     stmt: *mut TAOS_STMT2,
     sql: *const c_char,
@@ -199,7 +201,7 @@ pub unsafe extern "C" fn taos_stmt2_prepare(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param(
     stmt: *mut TAOS_STMT2,
     bindv: *mut TAOS_STMT2_BINDV,
@@ -269,7 +271,7 @@ pub unsafe extern "C" fn taos_stmt2_bind_param(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param_a(
     stmt: *mut TAOS_STMT2,
     bindv: *mut TAOS_STMT2_BINDV,
@@ -280,7 +282,7 @@ pub unsafe extern "C" fn taos_stmt2_bind_param_a(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param_column(
     _stmt: *mut TAOS_STMT2,
     _bindv: *mut TAOS_STMT2_COLUMN_BINDV,
@@ -288,7 +290,7 @@ pub unsafe extern "C" fn taos_stmt2_bind_param_column(
     stmt2_column_bind_not_implemented("taos_stmt2_bind_param_column")
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param_column_a(
     _stmt: *mut TAOS_STMT2,
     _bindv: *mut TAOS_STMT2_COLUMN_BINDV,
@@ -306,7 +308,7 @@ fn stmt2_column_bind_not_implemented(api: &str) -> c_int {
     set_err_and_get_code(TaosError::new(Code::FAILED, &msg))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_exec(
     stmt: *mut TAOS_STMT2,
     affected_rows: *mut c_int,
@@ -392,7 +394,7 @@ pub unsafe extern "C" fn taos_stmt2_exec(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_close(stmt: *mut TAOS_STMT2) -> c_int {
     debug!("taos_stmt2_close, stmt: {stmt:?}");
     if stmt.is_null() {
@@ -402,7 +404,7 @@ pub unsafe extern "C" fn taos_stmt2_close(stmt: *mut TAOS_STMT2) -> c_int {
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_is_insert(stmt: *mut TAOS_STMT2, insert: *mut c_int) -> c_int {
     debug!("taos_stmt2_is_insert start, stmt: {stmt:?}, insert: {insert:?}");
 
@@ -441,7 +443,7 @@ pub unsafe extern "C" fn taos_stmt2_is_insert(stmt: *mut TAOS_STMT2, insert: *mu
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_get_fields(
     stmt: *mut TAOS_STMT2,
     count: *mut c_int,
@@ -494,7 +496,7 @@ pub unsafe extern "C" fn taos_stmt2_get_fields(
     clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_free_fields(
     stmt: *mut TAOS_STMT2,
     fields: *mut TAOS_FIELD_ALL,
@@ -534,7 +536,7 @@ pub unsafe extern "C" fn taos_stmt2_free_fields(
     clear_error_info();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_result(stmt: *mut TAOS_STMT2) -> *mut TAOS_RES {
     debug!("taos_stmt2_result start, stmt: {stmt:?}");
 
@@ -570,7 +572,7 @@ pub unsafe extern "C" fn taos_stmt2_result(stmt: *mut TAOS_STMT2) -> *mut TAOS_R
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_error(stmt: *mut TAOS_STMT2) -> *mut c_char {
     taos_errstr(stmt) as _
 }
@@ -628,7 +630,9 @@ impl TAOS_STMT2_BINDV {
         tag_cnt: usize,
         col_cnt: usize,
     ) -> TaosResult<Vec<u8>> {
-        debug!("to_bytes, req_id: 0x{req_id:x}, stmt_id: {stmt_id}, tag_cnt: {tag_cnt}, col_cnt: {col_cnt}");
+        debug!(
+            "to_bytes, req_id: 0x{req_id:x}, stmt_id: {stmt_id}, tag_cnt: {tag_cnt}, col_cnt: {col_cnt}"
+        );
 
         let (tbname_buf_len, tbname_lens) = if !self.tbnames.is_null() {
             self.calc_tbname_lens()?
@@ -658,9 +662,15 @@ impl TAOS_STMT2_BINDV {
         let total_len = 28 + tbname_total_len + tag_total_len + col_total_len;
 
         trace!("to_bytes, tbname_buf_len: {tbname_buf_len}, tbname_lens: {tbname_lens:?}");
-        trace!("to_bytes, tag_buf_len: {tag_buf_len}, tag_lens: {tag_lens:?}, tag_total_lens: {tag_total_lens:?}, tag_buf_lens: {tag_buf_lens:?}");
-        trace!("to bytes, col_buf_len: {col_buf_len}, col_lens: {col_lens:?}, col_total_lens: {col_total_lens:?}, col_buf_lens: {col_buf_lens:?}");
-        trace!("to bytes, tbname_total_len: {tbname_total_len}, tag_total_len: {tag_total_len}, col_total_len: {col_total_len}, total_len: {total_len}");
+        trace!(
+            "to_bytes, tag_buf_len: {tag_buf_len}, tag_lens: {tag_lens:?}, tag_total_lens: {tag_total_lens:?}, tag_buf_lens: {tag_buf_lens:?}"
+        );
+        trace!(
+            "to bytes, col_buf_len: {col_buf_len}, col_lens: {col_lens:?}, col_total_lens: {col_total_lens:?}, col_buf_lens: {col_buf_lens:?}"
+        );
+        trace!(
+            "to bytes, tbname_total_len: {tbname_total_len}, tag_total_len: {tag_total_len}, col_total_len: {col_total_len}, total_len: {total_len}"
+        );
 
         let mut data = vec![0u8; HEADER_LEN + total_len];
         self.write_headers(&mut data, req_id, stmt_id);

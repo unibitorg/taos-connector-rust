@@ -124,7 +124,7 @@ async fn produce_data(
                     .as_millis() as i64;
 
                 for k in start..end {
-                    let c1 = rng.gen::<i32>();
+                    let c1 = rng.r#gen::<i32>();
                     let c2: f32 = rng.gen_range(0.0..10000000.);
                     let c2 = (c2 * 100.0).round() / 100.0;
                     let c3: f32 = rng.gen_range(0.0..10000000.);

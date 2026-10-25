@@ -1,7 +1,8 @@
 [package]
 name = "taos-macros"
 version = "0.2.16"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 keywords = ["taos", "TDengine", "proc-macro"]
 license = "MIT OR Apache-2.0"
 description = "TDengine connector internal macros"

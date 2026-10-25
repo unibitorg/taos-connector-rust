@@ -40,7 +40,7 @@ pub enum BorrowedValue<'b> {
 }
 
 macro_rules! borrowed_value_to_native {
-    ($v:expr) => {{
+    ($v:expr_2021) => {{
         use bigdecimal::ToPrimitive;
         match $v {
             BorrowedValue::Null(_) => None,
@@ -67,7 +67,7 @@ macro_rules! borrowed_value_to_native {
 }
 
 macro_rules! borrowed_value_to_float {
-    ($v:expr) => {{
+    ($v:expr_2021) => {{
         use bigdecimal::ToPrimitive;
         match $v {
             BorrowedValue::Null(_) => None,
@@ -1425,9 +1425,11 @@ mod tests {
         );
 
         let timestamp_value = Value::Timestamp(Timestamp::new(1, Precision::Millisecond));
-        assert!(timestamp_value
-            .to_sql_value_with_rfc3339()
-            .contains("1970-01-01T"));
+        assert!(
+            timestamp_value
+                .to_sql_value_with_rfc3339()
+                .contains("1970-01-01T")
+        );
 
         let nchar_value = Value::NChar("hello".to_string());
         assert_eq!(
@@ -1537,9 +1539,11 @@ mod tests {
         );
 
         let timestamp_value = BorrowedValue::Timestamp(Timestamp::new(1, Precision::Millisecond));
-        assert!(timestamp_value
-            .to_sql_value_with_rfc3339()
-            .contains("1970-01-01T"));
+        assert!(
+            timestamp_value
+                .to_sql_value_with_rfc3339()
+                .contains("1970-01-01T")
+        );
 
         let nchar_value = Value::NChar("hello".to_string());
         let b_nchar_value = nchar_value.to_borrowed_value();

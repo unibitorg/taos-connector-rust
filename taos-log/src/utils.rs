@@ -1,5 +1,5 @@
-use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::Registry;
+use tracing_subscriber::registry::LookupSpan;
 
 use crate::QidManager;
 

@@ -2,8 +2,8 @@ use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 
-use crate::common::views::DataType;
 use crate::common::Ty;
+use crate::common::views::DataType;
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -33,7 +33,7 @@ pub struct CompressOptions {
 }
 
 macro_rules! disabled_or_empty {
-    ($field:expr) => {
+    ($field:expr_2021) => {
         $field == "disabled" || $field.is_empty()
     };
     () => {};

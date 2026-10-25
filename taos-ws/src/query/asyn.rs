@@ -12,27 +12,27 @@ use byteorder::{ByteOrder, LittleEndian};
 use chrono_tz::Tz;
 use dashmap::DashMap;
 use faststr::FastStr;
-use futures::{future, FutureExt, SinkExt, StreamExt};
+use futures::{FutureExt, SinkExt, StreamExt, future};
 use itertools::Itertools;
 use taos_query::common::{Field, Precision, RawBlock, RawMeta, SmlData};
 use taos_query::prelude::{Code, RawError, RawResult};
-use taos_query::util::{generate_req_id, CleanUp, InlinableWrite};
+use taos_query::util::{CleanUp, InlinableWrite, generate_req_id};
 use taos_query::{
-    block_in_place_or_global, AsyncFetchable, AsyncQueryable, DeError, DsnError, IntoDsn,
+    AsyncFetchable, AsyncQueryable, DeError, DsnError, IntoDsn, block_in_place_or_global,
 };
 use thiserror::Error;
 use tokio::select;
-use tokio::sync::{mpsc, oneshot, watch, Mutex, Notify, RwLock};
+use tokio::sync::{Mutex, Notify, RwLock, mpsc, oneshot, watch};
 use tokio::task::JoinHandle;
 use tokio::time::{self, timeout};
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_util::sync::CancellationToken;
-use tracing::{instrument, Instrument};
+use tracing::{Instrument, instrument};
 
 use crate::{EndpointType, Stmt2Inner};
 
-use super::messages::*;
 use super::TaosBuilder;
+use super::messages::*;
 
 type QueryChannelSender = oneshot::Sender<RawResult<WsRecvData>>;
 type QueryInner = scc::HashMap<ReqId, QueryChannelSender>;
@@ -1220,23 +1220,26 @@ impl AsyncFetchable for ResultSet {
         &mut self,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<RawResult<Option<RawBlock>>> {
-        if let Some(mut f) = self.block_future.take() {
-            let res = f.poll_unpin(cx);
-            match res {
-                std::task::Poll::Ready(v) => Poll::Ready(v),
-                std::task::Poll::Pending => {
-                    self.block_future = Some(f);
-                    Poll::Pending
+        match self.block_future.take() {
+            Some(mut f) => {
+                let res = f.poll_unpin(cx);
+                match res {
+                    std::task::Poll::Ready(v) => Poll::Ready(v),
+                    std::task::Poll::Pending => {
+                        self.block_future = Some(f);
+                        Poll::Pending
+                    }
                 }
             }
-        } else {
-            let mut f = self.fetch().boxed();
-            let res = f.poll_unpin(cx);
-            match res {
-                std::task::Poll::Ready(v) => Poll::Ready(v),
-                std::task::Poll::Pending => {
-                    self.block_future = Some(unsafe { transmute(f) });
-                    Poll::Pending
+            _ => {
+                let mut f = self.fetch().boxed();
+                let res = f.poll_unpin(cx);
+                match res {
+                    std::task::Poll::Ready(v) => Poll::Ready(v),
+                    std::task::Poll::Pending => {
+                        self.block_future = Some(unsafe { transmute(f) });
+                        Poll::Pending
+                    }
                 }
             }
         }

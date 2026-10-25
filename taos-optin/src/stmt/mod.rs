@@ -1,4 +1,4 @@
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::sync::Arc;
 
 use itertools::Itertools;
@@ -9,7 +9,7 @@ use taos_query::stmt::AsyncBindable;
 use crate::into_c_str::IntoCStr;
 use crate::raw::{ApiEntry, StmtApi};
 use crate::types::*;
-use crate::{err_or, RawRes, RawTaos, ResultSet};
+use crate::{RawRes, RawTaos, ResultSet, err_or};
 
 mod bind;
 
@@ -477,10 +477,13 @@ mod tests {
 
         let mut res = taos.query("select * from st1")?;
 
-        if let Some(raw) = res.fetch_raw_block()? {
-            assert_eq!(raw.nrows(), 2);
-        } else {
-            panic!("no data retrieved");
+        match res.fetch_raw_block()? {
+            Some(raw) => {
+                assert_eq!(raw.nrows(), 2);
+            }
+            _ => {
+                panic!("no data retrieved");
+            }
         }
 
         taos.query("drop database stt2")?;
@@ -517,10 +520,9 @@ mod tests {
             ColumnView::from_varchar(vec!["ABC"]),
             ColumnView::from_nchar(vec!["涛思数据"]),
             ColumnView::from_bytes(vec![hex_string_to_bytes("123456").to_vec()]),
-            ColumnView::from_geobytes(vec![hex_string_to_bytes(
-                "0101000000000000000000F03F0000000000000040",
-            )
-            .to_vec()]),
+            ColumnView::from_geobytes(vec![
+                hex_string_to_bytes("0101000000000000000000F03F0000000000000040").to_vec(),
+            ]),
         ];
         let rows = stmt.bind(&params)?.add_batch()?.execute()?;
         assert_eq!(rows, 1);

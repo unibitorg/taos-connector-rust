@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use taos::TaosBuilder;
 use taos_query::prelude::sync::*;
 
@@ -16,13 +16,19 @@ fn criterion_benchmark(c: &mut Criterion) {
     for i in 0..333 {
         let table = format!(" d100{}", i);
         t += 1;
-        let sub_sql = format!("{table}_1 USING meters TAGS ('California.SanFrancisco', 2) (ts, current) VALUES ({t}, 10.2)");
+        let sub_sql = format!(
+            "{table}_1 USING meters TAGS ('California.SanFrancisco', 2) (ts, current) VALUES ({t}, 10.2)"
+        );
         sql += &sub_sql;
         t += 1;
-        let sub_sql = format!("{table}_2 USING meters TAGS ('California.SanFrancisco', 2) (ts, voltage) VALUES ({t}, 219)");
+        let sub_sql = format!(
+            "{table}_2 USING meters TAGS ('California.SanFrancisco', 2) (ts, voltage) VALUES ({t}, 219)"
+        );
         sql += &sub_sql;
         t += 1;
-        let sub_sql = format!("{table}_3 USING meters TAGS ('California.SanFrancisco', 2) (ts, phase) VALUES ({t}, 0.32)");
+        let sub_sql = format!(
+            "{table}_3 USING meters TAGS ('California.SanFrancisco', 2) (ts, phase) VALUES ({t}, 0.32)"
+        );
         sql += &sub_sql;
     }
     println!("{}", sql);
