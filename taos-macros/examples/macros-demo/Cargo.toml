@@ -7,7 +7,8 @@ rust-version = "1.90.0"
 
 [dev-dependencies]
 taos-macros = { path = "../../" }
-taos = { path = "../../../taos", features = ["test"] }
+taos = { path = "../../../taos" }
+anyhow = "1"
 tokio = "1"
 
 # This demonstration is built independently of the connector workspace.
