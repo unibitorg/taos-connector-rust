@@ -18,11 +18,19 @@ pub struct ClientConfig {
     pub set_socket_fn: Box<dyn FnMut(&std::net::TcpStream) -> Result<(), WsError> + Send>,
 }
 
+/// Read-side buffer of the default (write-unbuffered) client: tokio's own
+/// `BufReader` default size. tokio >= 1.54 panics on a zero-capacity
+/// `BufReader` ("capacity must be greater than zero"), so the read side must
+/// never be 0.
+pub const DEFAULT_READ_BUF: usize = 8 * 1024;
+
 impl Default for ClientConfig {
     fn default() -> Self {
         Self {
-            read_buf: Default::default(),
-            write_buf: Default::default(),
+            read_buf: DEFAULT_READ_BUF,
+            // Writes stay unbuffered: callers never flush the codec, and a
+            // zero-capacity `BufWriter` writes straight through.
+            write_buf: 0,
             certs: Default::default(),
             window: Default::default(),
             context_take_over: Default::default(),
@@ -619,5 +627,29 @@ mod tests {
             .async_connect_with("ws://localhost:6041/ws", check_fn)
             .await;
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn default_config_has_nonzero_read_buf_and_unbuffered_writes() {
+        let config = ClientConfig::default();
+        assert_eq!(config.read_buf, DEFAULT_READ_BUF);
+        assert!(config.read_buf > 0);
+        assert_eq!(config.write_buf, 0);
+    }
+
+    #[tokio::test]
+    async fn default_config_async_connect_does_not_panic_on_tokio_bufreader() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let _ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+        });
+
+        ClientConfig::default()
+            .async_connect_with(format!("ws://{addr}"), codec::AsyncDeflateCodec::check_fn)
+            .await
+            .expect("default client config must connect without panicking");
+        server.await.unwrap();
     }
 }
