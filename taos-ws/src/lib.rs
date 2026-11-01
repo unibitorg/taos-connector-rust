@@ -1371,6 +1371,27 @@ mod tests {
                 ))
                 .await
                 .unwrap_or_else(|_| panic!("WebSocketError: [redacted]"));
+                let request = ws
+                    .next()
+                    .await
+                    .expect("connection request")
+                    .unwrap_or_else(|_| panic!("WebSocketError: [redacted]"));
+                let request: serde_json::Value =
+                    serde_json::from_str(request.to_text().expect("text connection request"))
+                        .expect("connection request JSON");
+                assert_eq!(request["action"], "conn");
+                ws.send(Message::Text(
+                    serde_json::json!({
+                        "code": 0,
+                        "message": "",
+                        "action": "conn",
+                        "req_id": request["args"]["req_id"],
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .unwrap_or_else(|_| panic!("WebSocketError: [redacted]"));
             });
             let builder = TaosBuilder::from_dsn(format!("ws://{addr}"))
                 .unwrap_or_else(|_| panic!("DsnError: [redacted]"));
