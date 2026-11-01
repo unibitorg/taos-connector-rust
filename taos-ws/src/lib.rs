@@ -1341,6 +1341,50 @@ mod tests {
     use crate::query::messages::{ToMessage, WsRecv, WsRecvData, WsSend};
     use crate::*;
 
+    // The 0.12.3 ws-tool transport needed a nonzero Tokio BufReader capacity
+    // (Refs #9). Exercise the replacement transport with its default config,
+    // including an actual read, without a local TDengine installation.
+    #[tokio::test]
+    async fn default_transport_reads_loopback_version_without_bufreader_panic() {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("loopback listener");
+            let addr = listener.local_addr().expect("loopback address");
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.expect("loopback accept");
+                let mut ws = tokio_tungstenite::accept_async(stream)
+                    .await
+                    .unwrap_or_else(|_| panic!("WebSocketError: [redacted]"));
+                let request = ws
+                    .next()
+                    .await
+                    .expect("version request")
+                    .unwrap_or_else(|_| panic!("WebSocketError: [redacted]"));
+                let request: serde_json::Value =
+                    serde_json::from_str(request.to_text().expect("text version request"))
+                        .expect("version request JSON");
+                assert_eq!(request["action"], "version");
+                ws.send(Message::Text(
+                    r#"{"code":0,"message":"","action":"version","req_id":0,"version":"3.3.6.0"}"#
+                        .into(),
+                ))
+                .await
+                .unwrap_or_else(|_| panic!("WebSocketError: [redacted]"));
+            });
+            let builder = TaosBuilder::from_dsn(format!("ws://{addr}"))
+                .unwrap_or_else(|_| panic!("DsnError: [redacted]"));
+            let (_, version) = builder
+                .connect()
+                .await
+                .unwrap_or_else(|_| panic!("RawError: [redacted]"));
+            assert_eq!(version, "3.3.6.0");
+            server.await.expect("loopback server task");
+        })
+        .await
+        .expect("default transport must finish within five seconds");
+    }
+
     #[tokio::test]
     async fn test_connect() -> Result<(), anyhow::Error> {
         let _ = tracing_subscriber::fmt()
