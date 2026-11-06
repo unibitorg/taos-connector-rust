@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_int, c_ulong, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_ulong, c_void};
 use std::{ptr, slice, str};
 
 use byteorder::{ByteOrder, LittleEndian};
@@ -9,11 +9,11 @@ use taos_query::util::generate_req_id;
 use taos_query::{block_in_place_or_global, global_tokio_runtime};
 use taos_ws::query::{BindType, Stmt2Field};
 use taos_ws::{Stmt2, Taos};
-use tracing::{debug, error, trace, Instrument};
+use tracing::{Instrument, debug, error, trace};
 
 use crate::ws::error::*;
 use crate::ws::query::QueryResultSet;
-use crate::ws::{ResultSet, SafePtr, TaosResult, __taos_async_fn_t, TAOS, TAOS_RES};
+use crate::ws::{__taos_async_fn_t, ResultSet, SafePtr, TAOS, TAOS_RES, TaosResult};
 
 #[allow(non_camel_case_types)]
 pub type TAOS_STMT2 = c_void;
@@ -82,194 +82,208 @@ pub struct TAOS_FIELD_ALL {
     pub field_type: u8,
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_init(
     taos: *mut TAOS,
     option: *mut TAOS_STMT2_OPTION,
 ) -> *mut TAOS_STMT2 {
-    debug!("taos_stmt2_init start, taos: {taos:?}, option: {option:?}");
-    let taos_stmt2: TaosMaybeError<TaosStmt2> = match stmt2_init(taos, option) {
-        Ok(taos_stmt2) => taos_stmt2.into(),
-        Err(err) => {
-            error!("taos_stmt2_init failed, err: {err:?}");
-            set_err_and_get_code(err);
-            return ptr::null_mut();
-        }
-    };
-    debug!("taos_stmt2_init, taos_stmt2: {taos_stmt2:?}");
-    let res = Box::into_raw(Box::new(taos_stmt2)) as _;
-    debug!("taos_stmt2_init succ, res: {res:?}");
-    res
+    unsafe {
+        debug!("taos_stmt2_init start, taos: {taos:?}, option: {option:?}");
+        let taos_stmt2: TaosMaybeError<TaosStmt2> = match stmt2_init(taos, option) {
+            Ok(taos_stmt2) => taos_stmt2.into(),
+            Err(err) => {
+                error!("taos_stmt2_init failed, err: {err:?}");
+                set_err_and_get_code(err);
+                return ptr::null_mut();
+            }
+        };
+        debug!("taos_stmt2_init, taos_stmt2: {taos_stmt2:?}");
+        let res = Box::into_raw(Box::new(taos_stmt2)) as _;
+        debug!("taos_stmt2_init succ, res: {res:?}");
+        res
+    }
 }
 
 unsafe fn stmt2_init(taos: *mut TAOS, option: *mut TAOS_STMT2_OPTION) -> TaosResult<TaosStmt2> {
-    let taos = (taos as *mut Taos)
-        .as_mut()
-        .ok_or(TaosError::new(Code::INVALID_PARA, "taos is null"))?;
+    unsafe {
+        let taos = (taos as *mut Taos)
+            .as_mut()
+            .ok_or(TaosError::new(Code::INVALID_PARA, "taos is null"))?;
 
-    let stmt2 = Stmt2::new(taos.client_cloned());
+        let stmt2 = Stmt2::new(taos.client_cloned());
 
-    let (req_id, single_stb_insert, single_table_bind_once, async_exec_fn, userdata) =
-        match option.as_ref() {
-            Some(option) => {
-                let async_exec_fn = option.asyncExecFn as *const ();
-                let async_exec_fn = if !async_exec_fn.is_null() {
-                    Some(option.asyncExecFn)
-                } else {
-                    None
-                };
+        let (req_id, single_stb_insert, single_table_bind_once, async_exec_fn, userdata) =
+            match option.as_ref() {
+                Some(option) => {
+                    let async_exec_fn = option.asyncExecFn as *const ();
+                    let async_exec_fn = if !async_exec_fn.is_null() {
+                        Some(option.asyncExecFn)
+                    } else {
+                        None
+                    };
 
-                (
-                    option.reqid as _,
-                    option.singleStbInsert,
-                    option.singleTableBindOnce,
-                    async_exec_fn,
-                    option.userdata,
-                )
-            }
-            None => (generate_req_id(), false, false, None, ptr::null_mut()),
-        };
+                    (
+                        option.reqid as _,
+                        option.singleStbInsert,
+                        option.singleTableBindOnce,
+                        async_exec_fn,
+                        option.userdata,
+                    )
+                }
+                None => (generate_req_id(), false, false, None, ptr::null_mut()),
+            };
 
-    debug!("stmt2_init, req_id: 0x{req_id:x}, single_stb_insert: {single_stb_insert}, single_table_bind_once: {single_table_bind_once}, async_exec_fn: {async_exec_fn:?}, userdata: {userdata:?}");
+        debug!(
+            "stmt2_init, req_id: 0x{req_id:x}, single_stb_insert: {single_stb_insert}, single_table_bind_once: {single_table_bind_once}, async_exec_fn: {async_exec_fn:?}, userdata: {userdata:?}"
+        );
 
-    block_in_place_or_global(stmt2.init_with_options(
-        req_id,
-        single_stb_insert,
-        single_table_bind_once,
-    ))?;
+        block_in_place_or_global(stmt2.init_with_options(
+            req_id,
+            single_stb_insert,
+            single_table_bind_once,
+        ))?;
 
-    Ok(TaosStmt2::new(stmt2, async_exec_fn, userdata))
+        Ok(TaosStmt2::new(stmt2, async_exec_fn, userdata))
+    }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_prepare(
     stmt: *mut TAOS_STMT2,
     sql: *const c_char,
     length: c_ulong,
 ) -> c_int {
-    debug!("taos_stmt2_prepare start, stmt: {stmt:?}, sql: {sql:?}, length: {length}");
+    unsafe {
+        debug!("taos_stmt2_prepare start, stmt: {stmt:?}, sql: {sql:?}, length: {length}");
 
-    let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
-        Some(maybe_err) => maybe_err,
-        None => return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null")),
-    };
+        let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
+            Some(maybe_err) => maybe_err,
+            None => {
+                return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+            }
+        };
 
-    let stmt2 = match maybe_err.deref_mut() {
-        Some(taos_stmt2) => &mut taos_stmt2.stmt2,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
-            return format_errno(Code::INVALID_PARA.into());
-        }
-    };
-
-    if sql.is_null() {
-        maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "sql is null")));
-        return format_errno(Code::INVALID_PARA.into());
-    }
-
-    let sql = if length > 0 {
-        // TODO: check utf-8
-        str::from_utf8_unchecked(slice::from_raw_parts(sql as _, length as _))
-    } else {
-        match CStr::from_ptr(sql).to_str() {
-            Ok(sql) => sql,
-            Err(_) => {
-                maybe_err.with_err(Some(TaosError::new(
-                    Code::INVALID_PARA,
-                    "sql is invalid utf-8",
-                )));
+        let stmt2 = match maybe_err.deref_mut() {
+            Some(taos_stmt2) => &mut taos_stmt2.stmt2,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
                 return format_errno(Code::INVALID_PARA.into());
             }
-        }
-    };
+        };
 
-    debug!("taos_stmt2_prepare, sql: {sql}");
-
-    match stmt2.prepare(sql) {
-        Ok(_) => {
-            debug!("taos_stmt2_prepare succ");
-            maybe_err.clear_err();
-            clear_err_and_ret_succ()
+        if sql.is_null() {
+            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "sql is null")));
+            return format_errno(Code::INVALID_PARA.into());
         }
-        Err(err) => {
-            error!("taos_stmt2_prepare failed, err: {err:?}");
-            maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
-            format_errno(err.code().into())
+
+        let sql = if length > 0 {
+            // TODO: check utf-8
+            str::from_utf8_unchecked(slice::from_raw_parts(sql as _, length as _))
+        } else {
+            match CStr::from_ptr(sql).to_str() {
+                Ok(sql) => sql,
+                Err(_) => {
+                    maybe_err.with_err(Some(TaosError::new(
+                        Code::INVALID_PARA,
+                        "sql is invalid utf-8",
+                    )));
+                    return format_errno(Code::INVALID_PARA.into());
+                }
+            }
+        };
+
+        debug!("taos_stmt2_prepare, sql: {sql}");
+
+        match stmt2.prepare(sql) {
+            Ok(_) => {
+                debug!("taos_stmt2_prepare succ");
+                maybe_err.clear_err();
+                clear_err_and_ret_succ()
+            }
+            Err(err) => {
+                error!("taos_stmt2_prepare failed, err: {err:?}");
+                maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
+                format_errno(err.code().into())
+            }
         }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param(
     stmt: *mut TAOS_STMT2,
     bindv: *mut TAOS_STMT2_BINDV,
     col_idx: i32,
 ) -> c_int {
-    debug!("taos_stmt2_bind_param start, stmt: {stmt:?}, bindv: {bindv:?}, col_idx: {col_idx}");
+    unsafe {
+        debug!("taos_stmt2_bind_param start, stmt: {stmt:?}, bindv: {bindv:?}, col_idx: {col_idx}");
 
-    let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
-        Some(maybe_err) => maybe_err,
-        None => return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null")),
-    };
-
-    let stmt2 = match maybe_err.deref_mut() {
-        Some(taos_stmt2) => &mut taos_stmt2.stmt2,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
-            return format_errno(Code::INVALID_PARA.into());
-        }
-    };
-
-    let bindv = match bindv.as_ref() {
-        Some(bindv) => bindv,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "bindv is null")));
-            return format_errno(Code::INVALID_PARA.into());
-        }
-    };
-
-    let mut tag_cnt = 0;
-    let mut col_cnt = 0;
-    if stmt2.is_insert().unwrap() {
-        for field in stmt2.fields().unwrap() {
-            match field.bind_type {
-                BindType::Tag => tag_cnt += 1,
-                BindType::Column => col_cnt += 1,
-                BindType::TableName | BindType::Unknown(_) => {}
+        let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
+            Some(maybe_err) => maybe_err,
+            None => {
+                return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
             }
-        }
-    } else {
-        col_cnt = stmt2.fields_count().unwrap();
-    }
+        };
 
-    let req_id = generate_req_id();
-    let bytes = match bindv.to_bytes(req_id, stmt2.stmt_id(), tag_cnt, col_cnt) {
-        Ok(bytes) => bytes,
-        Err(err) => {
-            error!("taos_stmt2_bind_param failed, err: {err:?}");
-            let code = err.code();
-            maybe_err.with_err(Some(err));
-            return format_errno(code.into());
-        }
-    };
+        let stmt2 = match maybe_err.deref_mut() {
+            Some(taos_stmt2) => &mut taos_stmt2.stmt2,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+                return format_errno(Code::INVALID_PARA.into());
+            }
+        };
 
-    trace!("taos_stmt2_bind_param, bind bytes: {bytes:?}");
+        let bindv = match bindv.as_ref() {
+            Some(bindv) => bindv,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "bindv is null")));
+                return format_errno(Code::INVALID_PARA.into());
+            }
+        };
 
-    match block_in_place_or_global(stmt2.bind_bytes(req_id, bytes)) {
-        Ok(_) => {
-            debug!("taos_stmt2_bind_param succ");
-            maybe_err.clear_err();
-            0
+        let mut tag_cnt = 0;
+        let mut col_cnt = 0;
+        if stmt2.is_insert().unwrap() {
+            for field in stmt2.fields().unwrap() {
+                match field.bind_type {
+                    BindType::Tag => tag_cnt += 1,
+                    BindType::Column => col_cnt += 1,
+                    BindType::TableName | BindType::Unknown(_) => {}
+                }
+            }
+        } else {
+            col_cnt = stmt2.fields_count().unwrap();
         }
-        Err(err) => {
-            error!("taos_stmt2_bind_param failed, err: {err:?}");
-            maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
-            format_errno(err.code().into())
+
+        let req_id = generate_req_id();
+        let bytes = match bindv.to_bytes(req_id, stmt2.stmt_id(), tag_cnt, col_cnt) {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                error!("taos_stmt2_bind_param failed, err: {err:?}");
+                let code = err.code();
+                maybe_err.with_err(Some(err));
+                return format_errno(code.into());
+            }
+        };
+
+        trace!("taos_stmt2_bind_param, bind bytes: {bytes:?}");
+
+        match block_in_place_or_global(stmt2.bind_bytes(req_id, bytes)) {
+            Ok(_) => {
+                debug!("taos_stmt2_bind_param succ");
+                maybe_err.clear_err();
+                0
+            }
+            Err(err) => {
+                error!("taos_stmt2_bind_param failed, err: {err:?}");
+                maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
+                format_errno(err.code().into())
+            }
         }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param_a(
     stmt: *mut TAOS_STMT2,
     bindv: *mut TAOS_STMT2_BINDV,
@@ -280,7 +294,7 @@ pub unsafe extern "C" fn taos_stmt2_bind_param_a(
     0
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param_column(
     _stmt: *mut TAOS_STMT2,
     _bindv: *mut TAOS_STMT2_COLUMN_BINDV,
@@ -288,7 +302,7 @@ pub unsafe extern "C" fn taos_stmt2_bind_param_column(
     stmt2_column_bind_not_implemented("taos_stmt2_bind_param_column")
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_bind_param_column_a(
     _stmt: *mut TAOS_STMT2,
     _bindv: *mut TAOS_STMT2_COLUMN_BINDV,
@@ -306,273 +320,292 @@ fn stmt2_column_bind_not_implemented(api: &str) -> c_int {
     set_err_and_get_code(TaosError::new(Code::FAILED, &msg))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_exec(
     stmt: *mut TAOS_STMT2,
     affected_rows: *mut c_int,
 ) -> c_int {
-    debug!("taos_stmt2_exec start, stmt: {stmt:?}, affected_rows: {affected_rows:?}");
+    unsafe {
+        debug!("taos_stmt2_exec start, stmt: {stmt:?}, affected_rows: {affected_rows:?}");
 
-    let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
-        Some(maybe_err) => maybe_err,
-        None => return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null")),
-    };
-
-    let taos_stmt2 = match maybe_err.deref_mut() {
-        Some(taos_stmt2) => taos_stmt2,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
-            return format_errno(Code::INVALID_PARA.into());
-        }
-    };
-
-    if taos_stmt2.async_exec_fn.is_none() {
-        if affected_rows.is_null() {
-            maybe_err.with_err(Some(TaosError::new(
-                Code::INVALID_PARA,
-                "affected_rows is null",
-            )));
-            return format_errno(Code::INVALID_PARA.into());
-        }
-
-        match taos_stmt2.stmt2.exec() {
-            Ok(rows) => {
-                *affected_rows = rows as _;
-                debug!("taos_stmt2_exec succ, affected_rows: {rows}");
-                maybe_err.clear_err();
-                return clear_err_and_ret_succ();
+        let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
+            Some(maybe_err) => maybe_err,
+            None => {
+                return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
             }
-            Err(err) => {
-                error!("taos_stmt2_exec failed, err: {err:?}");
-                maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
-                return format_errno(err.code().into());
+        };
+
+        let taos_stmt2 = match maybe_err.deref_mut() {
+            Some(taos_stmt2) => taos_stmt2,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+                return format_errno(Code::INVALID_PARA.into());
             }
-        }
-    }
+        };
 
-    global_tokio_runtime().spawn(
-        async move {
-            use taos_query::stmt2::Stmt2AsyncBindable;
-
-            let taos_stmt2 = maybe_err.deref_mut().unwrap();
-            let stmt2 = &mut taos_stmt2.stmt2;
-            let async_exec_fn = taos_stmt2.async_exec_fn.unwrap();
-            let userdata = SafePtr(taos_stmt2.userdata);
-
-            // TODO: add lock
-            if let Err(err) = Stmt2AsyncBindable::exec(stmt2).await {
-                error!("async taos_stmt2_exec exec failed, err: {err:?}");
-                maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
-                let code = format_errno(err.code().into());
-                async_exec_fn(userdata.0, ptr::null_mut(), code);
-                return;
+        if taos_stmt2.async_exec_fn.is_none() {
+            if affected_rows.is_null() {
+                maybe_err.with_err(Some(TaosError::new(
+                    Code::INVALID_PARA,
+                    "affected_rows is null",
+                )));
+                return format_errno(Code::INVALID_PARA.into());
             }
 
-            match Stmt2AsyncBindable::result_set(stmt2).await {
-                Ok(rs) => {
-                    debug!("async taos_stmt2_exec callback, result_set: {rs:?}");
-                    let rs: TaosMaybeError<ResultSet> =
-                        ResultSet::Query(QueryResultSet::new(rs)).into();
-                    let res = Box::into_raw(Box::new(rs));
+            match taos_stmt2.stmt2.exec() {
+                Ok(rows) => {
+                    *affected_rows = rows as _;
+                    debug!("taos_stmt2_exec succ, affected_rows: {rows}");
                     maybe_err.clear_err();
-                    async_exec_fn(userdata.0, res as _, 0);
+                    return clear_err_and_ret_succ();
                 }
                 Err(err) => {
-                    error!("async taos_stmt2_exec result failed, err: {err:?}");
+                    error!("taos_stmt2_exec failed, err: {err:?}");
                     maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
-                    let code = format_errno(err.code().into());
-                    async_exec_fn(userdata.0, ptr::null_mut(), code as _);
+                    return format_errno(err.code().into());
                 }
             }
         }
-        .in_current_span(),
-    );
 
-    debug!("async taos_stmt2_exec succ");
-    clear_err_and_ret_succ()
-}
+        global_tokio_runtime().spawn(
+            async move {
+                use taos_query::stmt2::Stmt2AsyncBindable;
 
-#[no_mangle]
-pub unsafe extern "C" fn taos_stmt2_close(stmt: *mut TAOS_STMT2) -> c_int {
-    debug!("taos_stmt2_close, stmt: {stmt:?}");
-    if stmt.is_null() {
-        return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+                let taos_stmt2 = maybe_err.deref_mut().unwrap();
+                let stmt2 = &mut taos_stmt2.stmt2;
+                let async_exec_fn = taos_stmt2.async_exec_fn.unwrap();
+                let userdata = SafePtr(taos_stmt2.userdata);
+
+                // TODO: add lock
+                if let Err(err) = Stmt2AsyncBindable::exec(stmt2).await {
+                    error!("async taos_stmt2_exec exec failed, err: {err:?}");
+                    maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
+                    let code = format_errno(err.code().into());
+                    async_exec_fn(userdata.0, ptr::null_mut(), code);
+                    return;
+                }
+
+                match Stmt2AsyncBindable::result_set(stmt2).await {
+                    Ok(rs) => {
+                        debug!("async taos_stmt2_exec callback, result_set: {rs:?}");
+                        let rs: TaosMaybeError<ResultSet> =
+                            ResultSet::Query(QueryResultSet::new(rs)).into();
+                        let res = Box::into_raw(Box::new(rs));
+                        maybe_err.clear_err();
+                        async_exec_fn(userdata.0, res as _, 0);
+                    }
+                    Err(err) => {
+                        error!("async taos_stmt2_exec result failed, err: {err:?}");
+                        maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
+                        let code = format_errno(err.code().into());
+                        async_exec_fn(userdata.0, ptr::null_mut(), code as _);
+                    }
+                }
+            }
+            .in_current_span(),
+        );
+
+        debug!("async taos_stmt2_exec succ");
+        clear_err_and_ret_succ()
     }
-    let _ = Box::from_raw(stmt as *mut TaosMaybeError<TaosStmt2>);
-    clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn taos_stmt2_close(stmt: *mut TAOS_STMT2) -> c_int {
+    unsafe {
+        debug!("taos_stmt2_close, stmt: {stmt:?}");
+        if stmt.is_null() {
+            return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+        }
+        let _ = Box::from_raw(stmt as *mut TaosMaybeError<TaosStmt2>);
+        clear_err_and_ret_succ()
+    }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_is_insert(stmt: *mut TAOS_STMT2, insert: *mut c_int) -> c_int {
-    debug!("taos_stmt2_is_insert start, stmt: {stmt:?}, insert: {insert:?}");
+    unsafe {
+        debug!("taos_stmt2_is_insert start, stmt: {stmt:?}, insert: {insert:?}");
 
-    let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
-        Some(maybe_err) => maybe_err,
-        None => return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null")),
-    };
+        let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
+            Some(maybe_err) => maybe_err,
+            None => {
+                return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+            }
+        };
 
-    let stmt2 = match maybe_err.deref_mut() {
-        Some(taos_stmt2) => &mut taos_stmt2.stmt2,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+        let stmt2 = match maybe_err.deref_mut() {
+            Some(taos_stmt2) => &mut taos_stmt2.stmt2,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+                return format_errno(Code::INVALID_PARA.into());
+            }
+        };
+
+        if insert.is_null() {
+            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "insert is null")));
             return format_errno(Code::INVALID_PARA.into());
         }
-    };
 
-    if insert.is_null() {
-        maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "insert is null")));
-        return format_errno(Code::INVALID_PARA.into());
-    }
-
-    match stmt2.is_insert() {
-        Some(is_insert) => {
-            *insert = is_insert as _;
-            debug!("taos_stmt2_is_insert succ, is_insert: {is_insert}");
-            maybe_err.clear_err();
-            clear_err_and_ret_succ()
-        }
-        None => {
-            maybe_err.with_err(Some(TaosError::new(
-                Code::FAILED,
-                "taos_stmt2_prepare is not called",
-            )));
-            format_errno(Code::FAILED.into())
+        match stmt2.is_insert() {
+            Some(is_insert) => {
+                *insert = is_insert as _;
+                debug!("taos_stmt2_is_insert succ, is_insert: {is_insert}");
+                maybe_err.clear_err();
+                clear_err_and_ret_succ()
+            }
+            None => {
+                maybe_err.with_err(Some(TaosError::new(
+                    Code::FAILED,
+                    "taos_stmt2_prepare is not called",
+                )));
+                format_errno(Code::FAILED.into())
+            }
         }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_get_fields(
     stmt: *mut TAOS_STMT2,
     count: *mut c_int,
     fields: *mut *mut TAOS_FIELD_ALL,
 ) -> c_int {
-    debug!("taos_stmt2_get_fields start, stmt: {stmt:?}, count: {count:?}, fields: {fields:?}");
+    unsafe {
+        debug!("taos_stmt2_get_fields start, stmt: {stmt:?}, count: {count:?}, fields: {fields:?}");
 
-    let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
-        Some(maybe_err) => maybe_err,
-        None => return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null")),
-    };
+        let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
+            Some(maybe_err) => maybe_err,
+            None => {
+                return set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+            }
+        };
 
-    let taos_stmt2 = match maybe_err.deref_mut() {
-        Some(taos_stmt2) => taos_stmt2,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+        let taos_stmt2 = match maybe_err.deref_mut() {
+            Some(taos_stmt2) => taos_stmt2,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+                return format_errno(Code::INVALID_PARA.into());
+            }
+        };
+
+        if count.is_null() {
+            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "count is null")));
             return format_errno(Code::INVALID_PARA.into());
         }
-    };
 
-    if count.is_null() {
-        maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "count is null")));
-        return format_errno(Code::INVALID_PARA.into());
-    }
-
-    let stmt2 = &mut taos_stmt2.stmt2;
-    if stmt2.is_insert().is_none() {
-        maybe_err.with_err(Some(TaosError::new(
-            Code::FAILED,
-            "taos_stmt2_prepare is not called",
-        )));
-        return format_errno(Code::FAILED.into());
-    }
-
-    if stmt2.is_insert().unwrap() {
-        let stmt2_fields = stmt2.fields().unwrap();
-        let field_all: Vec<TAOS_FIELD_ALL> = stmt2_fields.iter().map(|f| f.into()).collect();
-        if !field_all.is_empty() && !fields.is_null() {
-            *fields = Box::into_raw(field_all.into_boxed_slice()) as _;
-            taos_stmt2.fields_len = Some(stmt2_fields.len());
+        let stmt2 = &mut taos_stmt2.stmt2;
+        if stmt2.is_insert().is_none() {
+            maybe_err.with_err(Some(TaosError::new(
+                Code::FAILED,
+                "taos_stmt2_prepare is not called",
+            )));
+            return format_errno(Code::FAILED.into());
         }
-        *count = stmt2_fields.len() as _;
-    } else {
-        *count = stmt2.fields_count().unwrap() as _;
+
+        if stmt2.is_insert().unwrap() {
+            let stmt2_fields = stmt2.fields().unwrap();
+            let field_all: Vec<TAOS_FIELD_ALL> = stmt2_fields.iter().map(|f| f.into()).collect();
+            if !field_all.is_empty() && !fields.is_null() {
+                *fields = Box::into_raw(field_all.into_boxed_slice()) as _;
+                taos_stmt2.fields_len = Some(stmt2_fields.len());
+            }
+            *count = stmt2_fields.len() as _;
+        } else {
+            *count = stmt2.fields_count().unwrap() as _;
+        }
+
+        debug!("taos_stmt2_get_fields succ, fields: {fields:?}, count: {count:?}");
+
+        maybe_err.clear_err();
+        clear_err_and_ret_succ()
     }
-
-    debug!("taos_stmt2_get_fields succ, fields: {fields:?}, count: {count:?}");
-
-    maybe_err.clear_err();
-    clear_err_and_ret_succ()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_free_fields(
     stmt: *mut TAOS_STMT2,
     fields: *mut TAOS_FIELD_ALL,
 ) {
-    debug!("taos_stmt2_free_fields start, stmt: {stmt:?}, fields: {fields:?}");
+    unsafe {
+        debug!("taos_stmt2_free_fields start, stmt: {stmt:?}, fields: {fields:?}");
 
-    let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
-        Some(maybe_err) => maybe_err,
-        None => {
-            set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+        let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
+            Some(maybe_err) => maybe_err,
+            None => {
+                set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+                return;
+            }
+        };
+
+        let taos_stmt2 = match maybe_err.deref_mut() {
+            Some(taos_stmt2) => taos_stmt2,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+                return;
+            }
+        };
+
+        if taos_stmt2.fields_len.is_none() {
+            maybe_err.with_err(Some(TaosError::new(
+                Code::FAILED,
+                "taos_stmt2_get_fields is not called",
+            )));
             return;
         }
-    };
 
-    let taos_stmt2 = match maybe_err.deref_mut() {
-        Some(taos_stmt2) => taos_stmt2,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
-            return;
-        }
-    };
+        let len = taos_stmt2.fields_len.unwrap();
+        let fields = Vec::from_raw_parts(fields, len, len);
 
-    if taos_stmt2.fields_len.is_none() {
-        maybe_err.with_err(Some(TaosError::new(
-            Code::FAILED,
-            "taos_stmt2_get_fields is not called",
-        )));
-        return;
+        debug!("taos_stmt2_free_fields succ, fields: {fields:?}");
+
+        maybe_err.clear_err();
+        clear_error_info();
     }
-
-    let len = taos_stmt2.fields_len.unwrap();
-    let fields = Vec::from_raw_parts(fields, len, len);
-
-    debug!("taos_stmt2_free_fields succ, fields: {fields:?}");
-
-    maybe_err.clear_err();
-    clear_error_info();
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_result(stmt: *mut TAOS_STMT2) -> *mut TAOS_RES {
-    debug!("taos_stmt2_result start, stmt: {stmt:?}");
+    unsafe {
+        debug!("taos_stmt2_result start, stmt: {stmt:?}");
 
-    let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
-        Some(maybe_err) => maybe_err,
-        None => {
-            set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
-            return ptr::null_mut();
-        }
-    };
+        let maybe_err = match (stmt as *mut TaosMaybeError<TaosStmt2>).as_mut() {
+            Some(maybe_err) => maybe_err,
+            None => {
+                set_err_and_get_code(TaosError::new(Code::INVALID_PARA, "stmt is null"));
+                return ptr::null_mut();
+            }
+        };
 
-    let stmt2 = match maybe_err.deref_mut() {
-        Some(taos_stmt2) => &mut taos_stmt2.stmt2,
-        None => {
-            maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
-            return ptr::null_mut();
-        }
-    };
+        let stmt2 = match maybe_err.deref_mut() {
+            Some(taos_stmt2) => &mut taos_stmt2.stmt2,
+            None => {
+                maybe_err.with_err(Some(TaosError::new(Code::INVALID_PARA, "stmt is invalid")));
+                return ptr::null_mut();
+            }
+        };
 
-    match stmt2.result_set() {
-        Ok(rs) => {
-            let rs: TaosMaybeError<ResultSet> = ResultSet::Query(QueryResultSet::new(rs)).into();
-            debug!("taos_stmt2_result succ, result_set: {rs:?}");
-            maybe_err.clear_err();
-            clear_err_and_ret_succ();
-            Box::into_raw(Box::new(rs)) as _
-        }
-        Err(err) => {
-            error!("taos_stmt2_result failed, err: {err:?}");
-            maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
-            ptr::null_mut()
+        match stmt2.result_set() {
+            Ok(rs) => {
+                let rs: TaosMaybeError<ResultSet> =
+                    ResultSet::Query(QueryResultSet::new(rs)).into();
+                debug!("taos_stmt2_result succ, result_set: {rs:?}");
+                maybe_err.clear_err();
+                clear_err_and_ret_succ();
+                Box::into_raw(Box::new(rs)) as _
+            }
+            Err(err) => {
+                error!("taos_stmt2_result failed, err: {err:?}");
+                maybe_err.with_err(Some(TaosError::new(err.code(), &err.to_string())));
+                ptr::null_mut()
+            }
         }
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn taos_stmt2_error(stmt: *mut TAOS_STMT2) -> *mut c_char {
-    taos_errstr(stmt) as _
+    unsafe { taos_errstr(stmt) as _ }
 }
 
 #[derive(Debug)]
@@ -628,7 +661,9 @@ impl TAOS_STMT2_BINDV {
         tag_cnt: usize,
         col_cnt: usize,
     ) -> TaosResult<Vec<u8>> {
-        debug!("to_bytes, req_id: 0x{req_id:x}, stmt_id: {stmt_id}, tag_cnt: {tag_cnt}, col_cnt: {col_cnt}");
+        debug!(
+            "to_bytes, req_id: 0x{req_id:x}, stmt_id: {stmt_id}, tag_cnt: {tag_cnt}, col_cnt: {col_cnt}"
+        );
 
         let (tbname_buf_len, tbname_lens) = if !self.tbnames.is_null() {
             self.calc_tbname_lens()?
@@ -658,9 +693,15 @@ impl TAOS_STMT2_BINDV {
         let total_len = 28 + tbname_total_len + tag_total_len + col_total_len;
 
         trace!("to_bytes, tbname_buf_len: {tbname_buf_len}, tbname_lens: {tbname_lens:?}");
-        trace!("to_bytes, tag_buf_len: {tag_buf_len}, tag_lens: {tag_lens:?}, tag_total_lens: {tag_total_lens:?}, tag_buf_lens: {tag_buf_lens:?}");
-        trace!("to bytes, col_buf_len: {col_buf_len}, col_lens: {col_lens:?}, col_total_lens: {col_total_lens:?}, col_buf_lens: {col_buf_lens:?}");
-        trace!("to bytes, tbname_total_len: {tbname_total_len}, tag_total_len: {tag_total_len}, col_total_len: {col_total_len}, total_len: {total_len}");
+        trace!(
+            "to_bytes, tag_buf_len: {tag_buf_len}, tag_lens: {tag_lens:?}, tag_total_lens: {tag_total_lens:?}, tag_buf_lens: {tag_buf_lens:?}"
+        );
+        trace!(
+            "to bytes, col_buf_len: {col_buf_len}, col_lens: {col_lens:?}, col_total_lens: {col_total_lens:?}, col_buf_lens: {col_buf_lens:?}"
+        );
+        trace!(
+            "to bytes, tbname_total_len: {tbname_total_len}, tag_total_len: {tag_total_len}, col_total_len: {col_total_len}, total_len: {total_len}"
+        );
 
         let mut data = vec![0u8; HEADER_LEN + total_len];
         self.write_headers(&mut data, req_id, stmt_id);

@@ -157,11 +157,13 @@ impl RawBlock {
     ///
     /// When using this with correct TDengine 3.x raw block pointer, it's safe.
     pub unsafe fn parse_from_ptr(ptr: *mut c_void, precision: Precision) -> Self {
-        let header = &*(ptr as *const Header);
-        let len = header.length as usize;
-        let bytes = std::slice::from_raw_parts(ptr as *const u8, len);
-        let bytes = Bytes::from(bytes.to_vec());
-        Self::parse_from_raw_block(bytes, precision).with_layout(Layout::default())
+        unsafe {
+            let header = &*(ptr as *const Header);
+            let len = header.length as usize;
+            let bytes = std::slice::from_raw_parts(ptr as *const u8, len);
+            let bytes = Bytes::from(bytes.to_vec());
+            Self::parse_from_raw_block(bytes, precision).with_layout(Layout::default())
+        }
     }
 
     /// # Safety
@@ -175,15 +177,17 @@ impl RawBlock {
         rows: usize,
         precision: Precision,
     ) -> Self {
-        let mut bytes = Vec::new();
-        for i in 0..fields.len() {
-            let slice = ptr.add(i).read();
-            bytes.extend_from_slice(std::slice::from_raw_parts(
-                slice as *const u8,
-                lengths[i] as usize * rows,
-            ));
+        unsafe {
+            let mut bytes = Vec::new();
+            for i in 0..fields.len() {
+                let slice = ptr.add(i).read();
+                bytes.extend_from_slice(std::slice::from_raw_parts(
+                    slice as *const u8,
+                    lengths[i] as usize * rows,
+                ));
+            }
+            Self::parse_from_raw_block_v2(bytes, fields, lengths, rows, precision)
         }
-        Self::parse_from_raw_block_v2(bytes, fields, lengths, rows, precision)
     }
 
     pub fn parse_from_raw_block_v2<T: Into<Bytes>>(
@@ -482,7 +486,7 @@ impl RawBlock {
             }
 
             macro_rules! _decimal_value {
-                ($ty:expr, $prim:ty) => {{
+                ($ty:expr_2021, $prim:ty) => {{
                     let o1 = data_offset;
                     let o2 = data_offset + ((rows + 7) >> 3); // null bitmap len.
                     data_offset = o2 + rows * std::mem::size_of::<$prim>();
@@ -855,8 +859,10 @@ impl RawBlock {
         row: usize,
         col: usize,
     ) -> (Ty, u32, *const c_void) {
-        let view = self.columns.get_unchecked(col);
-        view.get_raw_value_unchecked(row)
+        unsafe {
+            let view = self.columns.get_unchecked(col);
+            view.get_raw_value_unchecked(row)
+        }
     }
 
     pub fn get_ref(&self, row: usize, col: usize) -> Option<BorrowedValue<'_>> {
@@ -873,7 +879,7 @@ impl RawBlock {
     /// Ensure that `row` and `col` not exceed the limit of the block.
     #[inline]
     pub unsafe fn get_ref_unchecked(&self, row: usize, col: usize) -> BorrowedValue<'_> {
-        self.columns.get_unchecked(col).get_ref_unchecked(row)
+        unsafe { self.columns.get_unchecked(col).get_ref_unchecked(row) }
     }
 
     pub fn to_values(&self) -> Vec<Vec<Value>> {

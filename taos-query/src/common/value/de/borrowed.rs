@@ -257,7 +257,7 @@ impl<'de> serde::de::Deserializer<'de> for BorrowedValue<'de> {
     {
         use BorrowedValue::*;
         macro_rules! _v_ {
-            ($v:expr) => {
+            ($v:expr_2021) => {
                 visitor.visit_newtype_struct($v.into_deserializer())
             };
         }
@@ -443,7 +443,7 @@ mod tests {
         use BorrowedValue::*;
 
         macro_rules! _de_value {
-            ($($v:expr, $ty:ty, $tv:expr) *) => {
+            ($($v:expr_2021, $ty:ty, $tv:expr_2021) *) => {
                 $(
                     {
                         let d = <$ty>::deserialize($v.into_deserializer()).expect("");
@@ -473,24 +473,24 @@ mod tests {
 
     #[test]
     fn de_borrowed_str() {
-        use serde_json::json;
         use BorrowedValue::*;
+        use serde_json::json;
 
         macro_rules! _de_str {
-            ($v:expr, is_err) => {
+            ($v:expr_2021, is_err) => {
                 assert!(<&str>::deserialize(($v).into_deserializer()).is_err());
             };
-            ($v:expr, $tv:expr) => {
+            ($v:expr_2021, $tv:expr_2021) => {
                 assert_eq!(<&str>::deserialize(($v).into_deserializer()).expect("str"), $tv);
             };
-            ($($v:expr, $c:ident) *) => {
+            ($($v:expr_2021, $c:ident) *) => {
                 $(
                     {
                         assert!(<&str>::deserialize(($v).into_deserializer()).$c());
                     }
                 )*
             };
-            ($($v2:expr, is_err) +; $($v:expr, $tv:expr) + ) => {
+            ($($v2:expr_2021, is_err) +; $($v:expr_2021, $tv:expr_2021) + ) => {
                 $(
                     _de_str!($v2, is_err);
                 )*
@@ -522,20 +522,20 @@ mod tests {
 
     #[test]
     fn de_string() {
-        use serde_json::json;
         use BorrowedValue::*;
+        use serde_json::json;
 
         macro_rules! _de_str {
-            ($v:expr, is_err) => {
+            ($v:expr_2021, is_err) => {
                 assert!(String::deserialize(($v).into_deserializer()).is_err());
             };
-            ($v:expr, $tv:expr) => {
+            ($v:expr_2021, $tv:expr_2021) => {
                 assert_eq!(String::deserialize(($v).into_deserializer()).expect("str"), $tv);
             };
-            ($($v:expr, $tv:expr) *) => {
+            ($($v:expr_2021, $tv:expr_2021) *) => {
                 $(_de_str!($v, $tv);)*
             };
-            ($($v2:expr, is_err) *; $($v:expr, $tv:expr) * ) => {
+            ($($v2:expr_2021, is_err) *; $($v:expr_2021, $tv:expr_2021) * ) => {
                 $(
                     _de_str!($v2, is_err);
                 )*
@@ -559,11 +559,11 @@ mod tests {
 
     #[test]
     fn de_json() {
-        use serde_json::json;
         use BorrowedValue::*;
+        use serde_json::json;
 
         macro_rules! _de_json {
-            ($v:expr, $ty:ty, $tv:expr) => {{
+            ($v:expr_2021, $ty:ty, $tv:expr_2021) => {{
                 let d = <$ty>::deserialize(
                     Json($v.to_string().into_bytes().into()).into_deserializer(),
                 )
@@ -593,10 +593,10 @@ mod tests {
 
     #[test]
     fn de_newtype_struct() {
-        use serde_json::json;
         use BorrowedValue::*;
+        use serde_json::json;
         macro_rules! _de_ty {
-            ($v:expr, $ty:ty, $tv:expr) => {{
+            ($v:expr_2021, $ty:ty, $tv:expr_2021) => {{
                 let d = <$ty>::deserialize($v.into_deserializer()).expect("de type");
                 assert_eq!(d, $tv);
             }};

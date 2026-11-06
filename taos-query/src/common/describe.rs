@@ -80,8 +80,8 @@ impl Describe {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::helpers::{CompressOptions, Described};
     use crate::Ty;
+    use crate::helpers::{CompressOptions, Described};
 
     #[test]
     fn test_describe() {

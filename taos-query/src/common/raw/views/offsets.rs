@@ -52,52 +52,55 @@ impl Offsets {
         &self,
         range: std::ops::Range<usize>,
     ) -> (Self, Option<(i32, Option<i32>)>) {
-        use std::alloc::{alloc, Layout};
+        unsafe {
+            use std::alloc::{Layout, alloc};
 
-        let len = range.len();
-        let ptr = alloc(Layout::from_size_align_unchecked(
-            len * ITEM_SIZE,
-            ITEM_SIZE,
-        ));
-        ptr.write_bytes(0, len * ITEM_SIZE);
-        let slice = ptr as *mut i32;
+            let len = range.len();
+            let ptr = alloc(Layout::from_size_align_unchecked(
+                len * ITEM_SIZE,
+                ITEM_SIZE,
+            ));
+            ptr.write_bytes(0, len * ITEM_SIZE);
+            let slice = ptr as *mut i32;
 
-        let mut offset0 = None;
-        let start = range.start;
-        for i in range.clone() {
-            let offset = self.get_unchecked(i);
-            let ptr = slice.offset(i as isize - start as isize);
-            if offset == -1 {
-                ptr.write(-1);
-            } else if offset0.is_none() {
-                ptr.write(0);
-                offset0.replace(offset);
-            } else if let Some(offset0) = offset0 {
-                ptr.write(offset - offset0);
-            }
-        }
-
-        let mut offset1 = None;
-        if offset0.is_some() && range.end < self.len() {
-            for i in range.end..self.len() {
+            let mut offset0 = None;
+            let start = range.start;
+            for i in range.clone() {
                 let offset = self.get_unchecked(i);
-                if offset != -1 && offset1.is_none() {
-                    offset1.replace(offset);
-                    break;
+                let ptr = slice.offset(i as isize - start as isize);
+                if offset == -1 {
+                    ptr.write(-1);
+                } else if offset0.is_none() {
+                    ptr.write(0);
+                    offset0.replace(offset);
+                } else if let Some(offset0) = offset0 {
+                    ptr.write(offset - offset0);
                 }
             }
+
+            let mut offset1 = None;
+            if offset0.is_some() && range.end < self.len() {
+                for i in range.end..self.len() {
+                    let offset = self.get_unchecked(i);
+                    if offset != -1 && offset1.is_none() {
+                        offset1.replace(offset);
+                        break;
+                    }
+                }
+            }
+
+            if offset0 == offset1 {
+                offset1.take();
+            }
+
+            let bytes: Box<[u8]> =
+                Box::from_raw(std::slice::from_raw_parts_mut(ptr, len * ITEM_SIZE));
+
+            (
+                Self(bytes.into()),
+                offset0.map(|offset0| (offset0, offset1)),
+            )
         }
-
-        if offset0 == offset1 {
-            offset1.take();
-        }
-
-        let bytes: Box<[u8]> = Box::from_raw(std::slice::from_raw_parts_mut(ptr, len * ITEM_SIZE));
-
-        (
-            Self(bytes.into()),
-            offset0.map(|offset0| (offset0, offset1)),
-        )
     }
 }
 

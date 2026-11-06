@@ -7,8 +7,8 @@ mod field;
 use bytes::Bytes;
 use derive_more::Deref;
 pub use field::from_raw_fields;
-use taos_query::common::itypes::*;
 pub use taos_query::common::Ty;
+use taos_query::common::itypes::*;
 use taos_query::common::{ColumnView, Value};
 
 mod tmq;
@@ -86,51 +86,53 @@ impl TaosBindV2 {
 
     #[inline]
     unsafe fn free(&mut self) {
-        let ty = self.ty();
-        match ty {
-            Ty::Bool => {
-                let _ = Box::from_raw(self.buffer as *mut bool);
+        unsafe {
+            let ty = self.ty();
+            match ty {
+                Ty::Bool => {
+                    let _ = Box::from_raw(self.buffer as *mut bool);
+                }
+                Ty::TinyInt => {
+                    let _ = Box::from_raw(self.buffer as *mut i8);
+                }
+                Ty::SmallInt => {
+                    let _ = Box::from_raw(self.buffer as *mut i16);
+                }
+                Ty::Int => {
+                    let _ = Box::from_raw(self.buffer as *mut i32);
+                }
+                Ty::BigInt | Ty::Timestamp => {
+                    let _ = Box::from_raw(self.buffer as *mut i64);
+                }
+                Ty::UTinyInt => {
+                    let _ = Box::from_raw(self.buffer as *mut u8);
+                }
+                Ty::USmallInt => {
+                    let _ = Box::from_raw(self.buffer as *mut u16);
+                }
+                Ty::UInt => {
+                    let _ = Box::from_raw(self.buffer as *mut u32);
+                }
+                Ty::UBigInt => {
+                    let _ = Box::from_raw(self.buffer as *mut u64);
+                }
+                Ty::Float => {
+                    let _ = Box::from_raw(self.buffer as *mut f32);
+                }
+                Ty::Double => {
+                    let _ = Box::from_raw(self.buffer as *mut f64);
+                }
+                _ => (),
+            };
+            if !self.length.is_null() {
+                let _ = Box::from_raw(self.length);
             }
-            Ty::TinyInt => {
-                let _ = Box::from_raw(self.buffer as *mut i8);
+            if !self.is_null.is_null() {
+                let _ = Box::from_raw(self.is_null);
             }
-            Ty::SmallInt => {
-                let _ = Box::from_raw(self.buffer as *mut i16);
+            if !self.error.is_null() {
+                let _ = Box::from_raw(self.error);
             }
-            Ty::Int => {
-                let _ = Box::from_raw(self.buffer as *mut i32);
-            }
-            Ty::BigInt | Ty::Timestamp => {
-                let _ = Box::from_raw(self.buffer as *mut i64);
-            }
-            Ty::UTinyInt => {
-                let _ = Box::from_raw(self.buffer as *mut u8);
-            }
-            Ty::USmallInt => {
-                let _ = Box::from_raw(self.buffer as *mut u16);
-            }
-            Ty::UInt => {
-                let _ = Box::from_raw(self.buffer as *mut u32);
-            }
-            Ty::UBigInt => {
-                let _ = Box::from_raw(self.buffer as *mut u64);
-            }
-            Ty::Float => {
-                let _ = Box::from_raw(self.buffer as *mut f32);
-            }
-            Ty::Double => {
-                let _ = Box::from_raw(self.buffer as *mut f64);
-            }
-            _ => (),
-        };
-        if !self.length.is_null() {
-            let _ = Box::from_raw(self.length);
-        }
-        if !self.is_null.is_null() {
-            let _ = Box::from_raw(self.is_null);
-        }
-        if !self.error.is_null() {
-            let _ = Box::from_raw(self.error);
         }
     }
 }

@@ -774,7 +774,7 @@ mod tests {
     use std::env::set_var;
 
     use super::*;
-    use crate::ws::{taos_options, TSDB_OPTION};
+    use crate::ws::{TSDB_OPTION, taos_options};
 
     #[test]
     fn test_read_config_from_path() {

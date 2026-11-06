@@ -1,7 +1,8 @@
 [package]
 name = "mdsn"
 version = "0.2.25"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 keywords = ["url", "dsn", "mdsn"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -22,4 +23,10 @@ regex = "1"
 lazy_static = "1.4.0"
 
 [features]
+nightly-bench = []
 pest = ["dep:pest", "pest_derive"]
+
+# Run with nightly Rust and --features nightly-bench,pest.
+[[bench]]
+name = "regex_vs_pest"
+required-features = ["nightly-bench", "pest"]

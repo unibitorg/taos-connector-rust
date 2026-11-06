@@ -1,4 +1,4 @@
-use std::ffi::{c_char, c_void, CString};
+use std::ffi::{CString, c_char, c_void};
 use std::marker::PhantomData;
 use std::ptr;
 use std::sync::OnceLock;
@@ -78,24 +78,26 @@ impl<T: DecimalAllowedTy> DecimalView<T> {
 
     /// Unsafe version for [methods.is_null]
     pub unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.nulls.is_null_unchecked(row)
+        unsafe { self.nulls.is_null_unchecked(row) }
     }
 
     #[inline(always)]
     unsafe fn get_raw_data_at(&self, index: usize) -> *const T {
-        self.data.as_ptr().add(index * Self::ITEM_SIZE) as _
+        unsafe { self.data.as_ptr().add(index * Self::ITEM_SIZE) as _ }
     }
 
     /// Get nullable value at `row` index.
     pub unsafe fn get_unchecked(&self, row: usize) -> Option<Decimal<T>> {
-        if self.nulls.is_null_unchecked(row) {
-            None
-        } else {
-            Some(Decimal {
-                data: self.get_raw_data_at(row).read_unaligned(),
-                precision: self.precision(),
-                scale: self.scale(),
-            })
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                None
+            } else {
+                Some(Decimal {
+                    data: self.get_raw_data_at(row).read_unaligned(),
+                    precision: self.precision(),
+                    scale: self.scale(),
+                })
+            }
         }
     }
 
@@ -163,21 +165,23 @@ impl<T: DecimalAllowedTy> DecimalView<T> {
 
     /// Get raw value at `row` index.
     pub unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        let buf = self.buf.get_or_init(|| {
-            let mut buf = vec![ptr::null_mut(); self.len()];
-            for i in 0..self.len() {
-                if !self.nulls.is_null_unchecked(i) {
-                    let data = self.get_raw_data_at(i).read_unaligned();
-                    let dec = Decimal::new(data, self.precision(), self.scale());
-                    let str = dec.as_bigdecimal().to_string();
-                    let cstr = CString::new(str).unwrap();
-                    buf[i] = cstr.into_raw();
+        unsafe {
+            let buf = self.buf.get_or_init(|| {
+                let mut buf = vec![ptr::null_mut(); self.len()];
+                for i in 0..self.len() {
+                    if !self.nulls.is_null_unchecked(i) {
+                        let data = self.get_raw_data_at(i).read_unaligned();
+                        let dec = Decimal::new(data, self.precision(), self.scale());
+                        let str = dec.as_bigdecimal().to_string();
+                        let cstr = CString::new(str).unwrap();
+                        buf[i] = cstr.into_raw();
+                    }
                 }
-            }
-            buf
-        });
+                buf
+            });
 
-        (T::ty(), Self::ITEM_SIZE as _, buf[row] as _)
+            (T::ty(), Self::ITEM_SIZE as _, buf[row] as _)
+        }
     }
 }
 
@@ -310,16 +314,20 @@ macro_rules! impl_from_iter {
 
 impl DecimalView<i128> {
     pub unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::Decimal), BorrowedValue::Decimal)
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::Decimal), BorrowedValue::Decimal)
+        }
     }
     impl_from_iter!(i128);
 }
 
 impl DecimalView<i64> {
     pub unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::Decimal64), BorrowedValue::Decimal64)
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::Decimal64), BorrowedValue::Decimal64)
+        }
     }
     impl_from_iter!(i64);
 }

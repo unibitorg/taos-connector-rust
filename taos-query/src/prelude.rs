@@ -12,13 +12,13 @@ mod _priv {
 }
 
 pub use _priv::*;
-pub use futures::stream::{Stream, StreamExt, TryStreamExt};
 pub use r#async::*;
+pub use futures::stream::{Stream, StreamExt, TryStreamExt};
 pub use tokio;
 
-pub use crate::tmq::{AsAsyncConsumer, IsAsyncData, IsAsyncMeta};
 #[cfg(any(feature = "deadpool", feature = "r2d2"))]
 pub use crate::Pool;
+pub use crate::tmq::{AsAsyncConsumer, IsAsyncData, IsAsyncMeta};
 pub use crate::{AsyncTBuilder, RawResult};
 
 pub trait Helpers {
@@ -38,8 +38,8 @@ pub mod sync {
     pub use mdsn::{Address, Dsn, DsnError, IntoDsn};
     #[cfg(feature = "r2d2")]
     pub use r2d2::ManageConnection;
-    pub use serde::de::value::Error as DeError;
     use serde::de::DeserializeOwned;
+    pub use serde::de::value::Error as DeError;
 
     pub use super::_priv::*;
     use crate::common::*;
@@ -66,13 +66,14 @@ pub mod sync {
         T: Fetchable,
     {
         fn fetch(&mut self) -> RawResult<Option<RowView<'a>>> {
-            if let Some(block) = self.iter.next().transpose()? {
-                self.block = Some(block);
-                self.rows = self.block.as_mut().map(|raw| raw.rows());
-                let row = self.rows.as_mut().unwrap().next();
-                Ok(row)
-            } else {
-                Ok(None)
+            match self.iter.next().transpose()? {
+                Some(block) => {
+                    self.block = Some(block);
+                    self.rows = self.block.as_mut().map(|raw| raw.rows());
+                    let row = self.rows.as_mut().unwrap().next();
+                    Ok(row)
+                }
+                _ => Ok(None),
             }
         }
 
@@ -312,16 +313,16 @@ mod r#async {
     use chrono_tz::Tz;
     pub use futures::stream::{Stream, StreamExt, TryStreamExt};
     pub use mdsn::Address;
-    pub use serde::de::value::Error as DeError;
     use serde::de::DeserializeOwned;
+    pub use serde::de::value::Error as DeError;
 
     pub use super::_priv::*;
+    pub use crate::RawResult;
     use crate::common::*;
     use crate::helpers::*;
     pub use crate::stmt::AsyncBindable;
     pub use crate::stmt2::{Stmt2AsyncBindable, Stmt2BindParam};
     pub use crate::util::{AsyncInlinable, AsyncInlinableRead, AsyncInlinableWrite};
-    pub use crate::RawResult;
 
     pub struct AsyncBlocks<'a, T> {
         query: &'a mut T,
@@ -530,7 +531,7 @@ mod r#async {
         async fn write_raw_block(&self, block: &RawBlock) -> RawResult<()>;
 
         async fn write_raw_block_with_req_id(&self, block: &RawBlock, req_id: u64)
-            -> RawResult<()>;
+        -> RawResult<()>;
 
         async fn exec_many<T, I>(&self, input: I) -> RawResult<usize>
         where

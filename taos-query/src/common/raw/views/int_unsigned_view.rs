@@ -111,7 +111,7 @@ impl UIntView {
 
     /// Unsafe version for [methods.is_null]
     pub unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.nulls.is_null_unchecked(row)
+        unsafe { self.nulls.is_null_unchecked(row) }
     }
 
     /// Get nullable value at `row` index.
@@ -125,40 +125,48 @@ impl UIntView {
 
     #[inline(always)]
     unsafe fn get_raw_at(&self, index: usize) -> *const Item {
-        self.data.as_ptr().add(index * ITEM_SIZE) as _
+        unsafe { self.data.as_ptr().add(index * ITEM_SIZE) as _ }
     }
 
     /// Get nullable value at `row` index.
     pub unsafe fn get_unchecked(&self, row: usize) -> Option<Item> {
-        if self.nulls.is_null_unchecked(row) {
-            None
-        } else {
-            Some(self.get_raw_at(row).read_unaligned())
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                None
+            } else {
+                Some(self.get_raw_at(row).read_unaligned())
+            }
         }
     }
 
     pub unsafe fn get_ref_unchecked(&self, row: usize) -> Option<*const Item> {
-        if self.nulls.is_null_unchecked(row) {
-            None
-        } else {
-            Some(self.get_raw_at(row))
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                None
+            } else {
+                Some(self.get_raw_at(row))
+            }
         }
     }
 
     pub unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::UInt), BorrowedValue::UInt)
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::UInt), BorrowedValue::UInt)
+        }
     }
 
     pub unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        if self.nulls.is_null_unchecked(row) {
-            (Ty::UInt, std::mem::size_of::<Item>() as _, std::ptr::null())
-        } else {
-            (
-                Ty::UInt,
-                std::mem::size_of::<Item>() as _,
-                self.get_raw_at(row) as *const Item as _,
-            )
+        unsafe {
+            if self.nulls.is_null_unchecked(row) {
+                (Ty::UInt, std::mem::size_of::<Item>() as _, std::ptr::null())
+            } else {
+                (
+                    Ty::UInt,
+                    std::mem::size_of::<Item>() as _,
+                    self.get_raw_at(row) as *const Item as _,
+                )
+            }
         }
     }
 

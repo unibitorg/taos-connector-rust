@@ -499,11 +499,13 @@ impl DataType {
 
     /// Returns 64 when length is zero.
     unsafe fn positive_var_len(&self) -> u32 {
-        let len = self.attr.len;
-        if len == 0 {
-            64 // Default variable length for other types
-        } else {
-            len
+        unsafe {
+            let len = self.attr.len;
+            if len == 0 {
+                64 // Default variable length for other types
+            } else {
+                len
+            }
         }
     }
 

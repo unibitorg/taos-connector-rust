@@ -60,41 +60,49 @@ impl VarCharView {
 
     /// Unsafe version for [is_null](#method.is_null)
     pub(crate) unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.offsets.get_unchecked(row) < 0
+        unsafe { self.offsets.get_unchecked(row) < 0 }
     }
 
     pub(crate) unsafe fn get_unchecked(&self, row: usize) -> Option<&InlineStr> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            Some(InlineStr::<u16>::from_ptr(
-                self.data.as_ptr().offset(offset as isize),
-            ))
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                Some(InlineStr::<u16>::from_ptr(
+                    self.data.as_ptr().offset(offset as isize),
+                ))
+            } else {
+                None
+            }
         }
     }
 
     pub(crate) unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::VarChar), |s| {
-                BorrowedValue::VarChar(s.as_str())
-            })
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::VarChar), |s| {
+                    BorrowedValue::VarChar(s.as_str())
+                })
+        }
     }
 
     pub(crate) unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        match self.get_unchecked(row) {
-            Some(s) => (Ty::VarChar, s.len() as _, s.as_ptr() as _),
-            None => (Ty::VarChar, 0, std::ptr::null()),
+        unsafe {
+            match self.get_unchecked(row) {
+                Some(s) => (Ty::VarChar, s.len() as _, s.as_ptr() as _),
+                None => (Ty::VarChar, 0, std::ptr::null()),
+            }
         }
     }
 
     #[inline]
     pub unsafe fn get_length_unchecked(&self, row: usize) -> Option<usize> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            Some(InlineStr::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                Some(InlineStr::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
+            } else {
+                None
+            }
         }
     }
 
@@ -272,7 +280,17 @@ mod tests {
 
     #[test]
     fn test_slice() {
-        let data = [None, Some(""), Some("abc"), Some("中文"), None, None, Some("a loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooog string")];
+        let data = [
+            None,
+            Some(""),
+            Some("abc"),
+            Some("中文"),
+            None,
+            None,
+            Some(
+                "a loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooog string",
+            ),
+        ];
         let view = VarCharView::from_iter::<&str, _, _, _>(data);
         let slice = view.slice(0..0);
         assert!(slice.is_none());

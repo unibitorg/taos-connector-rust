@@ -3,11 +3,11 @@ use std::ptr::NonNull;
 
 use bigdecimal::ToPrimitive;
 use chrono_tz::Tz;
-use serde::de::{DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 use serde::Deserializer;
+use serde::de::{DeserializeSeed, IntoDeserializer, MapAccess, SeqAccess, Visitor};
 
-use crate::common::{BorrowedValue, Value};
 use crate::RawBlock;
+use crate::common::{BorrowedValue, Value};
 
 pub struct IntoRowsIter<'a> {
     pub(crate) raw: RawBlock,

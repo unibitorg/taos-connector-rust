@@ -1,5 +1,6 @@
 use proc_macro2::*;
 use quote::*;
+use syn::parse::Parser;
 use syn::{ForeignItemFn, ItemFn};
 
 /// Replace official `[cfg]` macro to add empty backport functions after the foreign mod block.
@@ -8,16 +9,30 @@ pub fn cfg<T: Into<TokenStream>>(attr: T, item: T) -> TokenStream {
 
     let item = item.into();
     // taos cfg only focus on foreign mod.
-    let syn: syn::ItemForeignMod = match syn::parse2(item.clone()) {
+    let parser = |input: syn::parse::ParseStream<'_>| {
+        let attrs = input.call(syn::Attribute::parse_outer)?;
+        let _: Option<syn::Token![unsafe]> = input.parse()?;
+        let mut module: syn::ItemForeignMod = input.parse()?;
+        module.attrs.splice(0..0, attrs);
+        Ok(module)
+    };
+    let syn: syn::ItemForeignMod = match parser.parse2(item.clone()) {
         Ok(it) => it,
         Err(_) => {
             return quote! {
               #[cfg(#cfg)]
               #item
-            }
+            };
         }
     };
 
+    let attrs = &syn.attrs;
+    let abi = &syn.abi;
+    let items = &syn.items;
+    let foreign_mod = quote! {
+        #(#attrs)*
+        unsafe #abi { #(#items)* }
+    };
     let mut backport = TokenStream::new();
 
     for item_fn in syn.items {
@@ -26,14 +41,14 @@ pub fn cfg<T: Into<TokenStream>>(attr: T, item: T) -> TokenStream {
             let item_fn = foreign_fn_to_item_fn(item_fn);
             backport.extend(quote! {
                 #[cfg(not(#cfg))]
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 #item_fn
             });
         }
     }
     quote! {
         #[cfg(#cfg)]
-        #item
+        #foreign_mod
 
         #backport
     }
@@ -105,16 +120,32 @@ mod tests {
 
         let expect = quote! {
             #[cfg(tmq)]
-            extern "C" {
+            unsafe extern "C" {
                 pub fn a();
             }
             #[cfg(not(tmq))]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub unsafe extern "C" fn a () {
               panic!("C function a is not supported in this build");
             }
         };
         assert_eq!(tokens.to_string(), expect.to_string());
+    }
+
+    #[test]
+    fn unsafe_foreign_mod() {
+        let legacy = quote! {
+            #[link(name = "taos")]
+            extern "C" { pub fn a(); }
+        };
+        let edition_2024 = quote! {
+            #[link(name = "taos")]
+            unsafe extern "C" { pub fn a(); }
+        };
+        assert_eq!(
+            cfg(quote!(tmq), legacy).to_string(),
+            cfg(quote!(tmq), edition_2024).to_string()
+        );
     }
 
     #[test]
@@ -149,18 +180,18 @@ mod tests {
 
         let expect = quote! {
             #[cfg(tmq)]
-            extern "C" {
+            unsafe extern "C" {
                 pub fn tmq_list_new() -> *mut tmq_list_t;
                 pub fn tmq_list_append(arg1: *mut tmq_list_t, arg2: *const c_char) -> i32;
             }
 
             #[cfg(not(tmq))]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub unsafe extern "C" fn tmq_list_new() -> *mut tmq_list_t {
                 panic!("C function tmq_list_new is not supported in this build");
             }
             #[cfg(not(tmq))]
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub unsafe extern "C" fn tmq_list_append(arg1: *mut tmq_list_t, arg2: *const c_char) -> i32 {
                 panic!("C function tmq_list_append is not supported in this build");
             }

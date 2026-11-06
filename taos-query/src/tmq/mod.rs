@@ -79,7 +79,7 @@ fn parse_duration(s: &str) -> Result<Duration, TimeoutError> {
             return Err(TimeoutError::Invalid(
                 s.to_string(),
                 "Invalid unit".to_string(),
-            ))
+            ));
         }
     };
 
@@ -437,7 +437,7 @@ pub trait AsAsyncConsumer: Sized + Send + Sync {
     async fn topic_assignment(&self, topic: &str) -> Vec<Assignment>;
 
     async fn offset_seek(&mut self, topic: &str, vgroup_id: VGroupId, offset: i64)
-        -> RawResult<()>;
+    -> RawResult<()>;
 
     async fn committed(&self, topic: &str, vgroup_id: VGroupId) -> RawResult<i64>;
 

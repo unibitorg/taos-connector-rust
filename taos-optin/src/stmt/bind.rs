@@ -1,5 +1,5 @@
-use taos_query::common::itypes::IsValue;
 use taos_query::common::Ty;
+use taos_query::common::itypes::IsValue;
 
 use crate::types::{BindFrom, TaosBindV2, TaosBindV3};
 

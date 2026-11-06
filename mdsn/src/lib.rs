@@ -97,7 +97,9 @@ pub enum DsnError {
     InvalidFormat(String),
     #[error("No `:` found in {0}, use either path:/path or driver://user:pass@host:port?k=v")]
     NoColonFound(String),
-    #[error("dsn contains '@' character({0}), please use full DSN format: <driver>://<username>:<password>@<addresses>/<database>?<params>")]
+    #[error(
+        "dsn contains '@' character({0}), please use full DSN format: <driver>://<username>:<password>@<addresses>/<database>?<params>"
+    )]
     InvalidSpecialCharacterFormat(String),
     #[error("invalid driver {0}")]
     InvalidDriver(String),
@@ -2203,9 +2205,9 @@ j/p1+4zmwB7F4u64uwBzwcZN5qCcAkfYYxjPbGARED4pA8YVpMx2DqmeYdR5pTj8
 8Q==
 -----END CERTIFICATE-----";
 
-        let dsn = Dsn::from_str(
-            &format!("wss://localhost:6041?tls_mode=verify_ca&tls_version=TLSv1.3,TLSv1.2&tls_ca={TEST_CERT}"),
-        )
+        let dsn = Dsn::from_str(&format!(
+            "wss://localhost:6041?tls_mode=verify_ca&tls_version=TLSv1.3,TLSv1.2&tls_ca={TEST_CERT}"
+        ))
         .unwrap();
         assert_eq!(dsn.driver, "wss");
         assert_eq!(dsn.addresses[0].host.as_deref().unwrap(), "localhost");

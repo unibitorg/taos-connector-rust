@@ -53,9 +53,9 @@ macro_rules! _impl_inline_str {
                 #[inline]
                 /// # Safety
                 ///
-                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self {
+                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self { unsafe {
                     &*ptr.cast::<InlineJson<$ty>>()
-                }
+                }}
 
                 #[inline]
                 pub fn as_ptr(&self) -> *const u8 {
@@ -108,5 +108,8 @@ fn test_inline_str() {
     // assert_eq!(format!("{}", inline.as_json().encode()), json);
     assert_eq!(format!("{}", inline), json);
     assert_eq!(inline.inlined(), bytes);
-    assert_eq!(inline.printable_inlined(), "\\x18\\x00{\\\"a\\\":\\\"\\xe6\\xb6\\x9b\\xe6\\x80\\x9d\\xf0\\x9d\\x84\\x9e\\xe6\\x95\\xb0\\xe6\\x8d\\xae\\\"}");
+    assert_eq!(
+        inline.printable_inlined(),
+        "\\x18\\x00{\\\"a\\\":\\\"\\xe6\\xb6\\x9b\\xe6\\x80\\x9d\\xf0\\x9d\\x84\\x9e\\xe6\\x95\\xb0\\xe6\\x8d\\xae\\\"}"
+    );
 }

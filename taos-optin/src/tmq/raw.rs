@@ -4,18 +4,18 @@ pub(super) use tmq::RawTmq;
 
 pub(super) mod tmq {
     use std::ffi::CStr;
-    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    use taos_query::tmq::{Assignment, VGroupId};
     use taos_query::RawError;
+    use taos_query::tmq::{Assignment, VGroupId};
     use tokio::sync::oneshot;
     use tracing::trace;
 
     use super::Topics;
     use crate::into_c_str::IntoCStr;
     use crate::raw::{ApiEntry, TmqApi};
-    use crate::types::{tmq_resp_err_t, tmq_t, SafeTmqT};
+    use crate::types::{SafeTmqT, tmq_resp_err_t, tmq_t};
     use crate::{RawRes, RawResult};
 
     #[derive(Debug)]
@@ -114,18 +114,20 @@ pub(super) mod tmq {
         }
 
         pub async fn commit(&self, msg: RawRes) -> RawResult<()> {
-            use std::sync::mpsc::{channel, Sender};
+            use std::sync::mpsc::{Sender, channel};
             let (sender, rx) = channel::<RawResult<()>>();
             unsafe extern "C" fn tmq_commit_async_cb(
                 _tmq: *mut tmq_t,
                 resp: tmq_resp_err_t,
                 param: *mut std::os::raw::c_void,
             ) {
-                let offsets = resp.ok_or("commit failed").map(|_| ());
-                let sender = param as *mut Sender<_>;
-                let sender = Box::from_raw(sender);
-                tracing::trace!("commit async callback");
-                sender.send(offsets).unwrap();
+                unsafe {
+                    let offsets = resp.ok_or("commit failed").map(|_| ());
+                    let sender = param as *mut Sender<_>;
+                    let sender = Box::from_raw(sender);
+                    tracing::trace!("commit async callback");
+                    sender.send(offsets).unwrap();
+                }
             }
 
             unsafe {
@@ -147,18 +149,20 @@ pub(super) mod tmq {
             offset: i64,
         ) -> RawResult<()> {
             if let Some(tmq_commit_offset_async) = self.tmq_api.tmq_commit_offset_async {
-                use std::sync::mpsc::{channel, Sender};
+                use std::sync::mpsc::{Sender, channel};
                 let (sender, rx) = channel::<RawResult<()>>();
                 unsafe extern "C" fn tmq_commit_offset_async_cb(
                     _tmq: *mut tmq_t,
                     resp: tmq_resp_err_t,
                     param: *mut std::os::raw::c_void,
                 ) {
-                    let offsets = resp.ok_or("commit offset failed").map(|_| ());
-                    let sender = param as *mut Sender<_>;
-                    let sender = Box::from_raw(sender);
-                    tracing::trace!("commit offset async callback");
-                    sender.send(offsets).unwrap();
+                    unsafe {
+                        let offsets = resp.ok_or("commit offset failed").map(|_| ());
+                        let sender = param as *mut Sender<_>;
+                        let sender = Box::from_raw(sender);
+                        tracing::trace!("commit offset async callback");
+                        sender.send(offsets).unwrap();
+                    }
                 }
 
                 unsafe {
@@ -381,8 +385,7 @@ pub(super) mod tmq {
 
                                 trace!(
                                     "Calling C func `tmq_consumer_poll` with ptr: {:?}, timeout: {}",
-                                    safe_tmq.0,
-                                    time
+                                    safe_tmq.0, time
                                 );
                                 let now = std::time::Instant::now();
                                 let res = unsafe { (tmq_api.tmq_consumer_poll)(safe_tmq.0, time) };
@@ -450,7 +453,7 @@ pub(super) mod tmq {
 pub(super) mod conf {
     use std::ffi::c_void;
 
-    use taos_query::{value_is_true, Dsn};
+    use taos_query::{Dsn, value_is_true};
     use types::tmq_resp_err_t;
 
     use crate::raw::TmqConfApi;
@@ -602,7 +605,7 @@ pub(super) mod conf {
                     )?;
                 }
                 // Safety: auto commit callback is called by C function.
-                #[no_mangle]
+                #[unsafe(no_mangle)]
                 unsafe extern "C" fn auto_commit_callback_by_rust(
                     _tmq: *mut tmq_t,
                     resp: tmq_resp_err_t,

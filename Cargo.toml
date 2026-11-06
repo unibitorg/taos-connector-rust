@@ -14,7 +14,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-edition = "2021"
+edition = "2024"
 version = "0.12.4"
 
 authors = ["Linhe Huo <linhe.huo@gmail.com>"]

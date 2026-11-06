@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use taos::Taos;
+    use taos::{AsyncQueryable, RawResult, Taos};
     use taos_macros::test;
 
     #[test]
@@ -16,7 +16,7 @@ mod tests {
     async fn async_with_taos_db(_taos: &Taos, _database: &str) {}
 
     #[test(databases = 10)]
-    async fn async_with_taos_multi(taos: &Taos, _databases: &[&str]) -> taos::Result<()> {
+    async fn async_with_taos_multi(taos: &Taos, _databases: &[&str]) -> RawResult<()> {
         let a = taos.databases().await?;
         assert!(a.len() >= 10);
         Ok(())

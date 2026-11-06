@@ -1,8 +1,8 @@
 use std::collections::{HashSet, VecDeque};
 use std::fmt::Debug;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use chrono_tz::Tz;
@@ -16,12 +16,12 @@ use taos_query::tmq::{
     AsAsyncConsumer, AsConsumer, Assignment, IsAsyncData, IsAsyncMeta, IsData, IsOffset,
     MessageSet, SyncOnAsync, Timeout, VGroupId,
 };
-use taos_query::util::{generate_req_id, AsyncInlinable, CleanUp, Edition, InlinableRead};
+use taos_query::util::{AsyncInlinable, CleanUp, Edition, InlinableRead, generate_req_id};
 use taos_query::{DeError, DsnError, IntoDsn, RawBlock, RawResult, TBuilder};
 use thiserror::Error;
-use tokio::sync::{mpsc, oneshot, watch, Mutex, RwLock};
-use tokio_tungstenite::tungstenite::protocol::Message;
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot, watch};
 use tokio_tungstenite::tungstenite::Error as WsError;
+use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::Instrument;
 
 use crate::query::asyn::WS_ERROR_NO;
@@ -165,7 +165,9 @@ impl TBuilder for TmqBuilder {
                     expired.trim() == "false" || expired.trim() == "unlimited",
                 )
             } else {
-                tracing::warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                tracing::warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };
@@ -256,7 +258,9 @@ impl taos_query::AsyncTBuilder for TmqBuilder {
                     expired.trim() == "false" || expired.trim() == "unlimited",
                 )
             } else {
-                tracing::warn!("Can't check enterprise edition with either \"show cluster\" or \"show grants\"");
+                tracing::warn!(
+                    "Can't check enterprise edition with either \"show cluster\" or \"show grants\""
+                );
                 Edition::new("unknown", true)
             }
         };
@@ -519,7 +523,9 @@ impl Consumer {
                 }
             }
 
-            tracing::warn!("poll data lost: no data received from cache for over 60 seconds, possible data loss");
+            tracing::warn!(
+                "poll data lost: no data received from cache for over 60 seconds, possible data loss"
+            );
         }
 
         drop(guard);
@@ -552,15 +558,18 @@ impl Consumer {
             let interval = Duration::from_millis(self.auto_commit_interval_ms.unwrap());
             if now - last_commit > interval {
                 tracing::trace!("poll auto commit, commit offset: {offset:?}");
-                if let Err(err) = AsAsyncConsumer::commit(self, offset.clone()).await {
-                    tracing::error!("poll auto commit failed, err: {err:?}");
-                } else {
-                    // Safety: This code guarantees that there is no concurrent access to the `auto_commit_offset` field.
-                    unsafe {
-                        let ptr = self as *const Self as *mut Self;
-                        let auto_commit_offset = &mut (*ptr).auto_commit_offset;
-                        auto_commit_offset.0 = None;
-                        auto_commit_offset.1 = now;
+                match AsAsyncConsumer::commit(self, offset.clone()).await {
+                    Err(err) => {
+                        tracing::error!("poll auto commit failed, err: {err:?}");
+                    }
+                    _ => {
+                        // Safety: This code guarantees that there is no concurrent access to the `auto_commit_offset` field.
+                        unsafe {
+                            let ptr = self as *const Self as *mut Self;
+                            let auto_commit_offset = &mut (*ptr).auto_commit_offset;
+                            auto_commit_offset.0 = None;
+                            auto_commit_offset.1 = now;
+                        }
                     }
                 }
             }
@@ -1362,12 +1371,12 @@ impl From<WsTmqError> for RawError {
 #[cfg(test)]
 mod tests {
     use std::collections::VecDeque;
-    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::{Duration, Instant};
 
     use taos_query::tmq::Timeout;
-    use tokio::sync::{mpsc, oneshot, watch, Mutex, RwLock};
+    use tokio::sync::{Mutex, RwLock, mpsc, oneshot, watch};
 
     use super::{Consumer, TaosBuilder, TmqBuilder, WsTmqAgent, WsTmqSender};
     use crate::consumer::messages::{TmqInit, TmqRecvData, WsMessage};
@@ -3564,14 +3573,14 @@ mod tests {
         .await?;
 
         let tmq = TmqBuilder::from_dsn(
-            "ws://invalid_user:invalid_pass@localhost:6041?group.id=8367&td.connect.token=invalid_token"
+            "ws://invalid_user:invalid_pass@localhost:6041?group.id=8367&td.connect.token=invalid_token",
         )?;
         let mut consumer = tmq.build().await?;
         let err = consumer.subscribe(["topic_1772507246"]).await.unwrap_err();
         assert!(err.to_string().contains("Invalid token"));
 
         let tmq = TmqBuilder::from_dsn(
-            "ws://invalid_user:invalid_pass@localhost:6041?group.id=8367&bearer_token=invalid_token"
+            "ws://invalid_user:invalid_pass@localhost:6041?group.id=8367&bearer_token=invalid_token",
         )?;
         let mut consumer = tmq.build().await?;
         let err = consumer.subscribe(["topic_1772507246"]).await.unwrap_err();
@@ -3761,9 +3770,10 @@ mod tests {
         let err = taos_query::prelude::AsAsyncConsumer::subscribe(&mut consumer, ["topic_test"])
             .await
             .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("unexpected subscribe response: Unsubscribe"));
+        assert!(
+            err.to_string()
+                .contains("unexpected subscribe response: Unsubscribe")
+        );
 
         Ok(())
     }
@@ -3861,13 +3871,16 @@ mod cloud_tests {
 
             loop {
                 let res = consumer.recv_timeout(timeout).await;
-                if let Some((offset, message)) = res? {
-                    let (done_tx, done_rx) = oneshot::channel();
-                    msg_tx.send((message, done_tx)).await?;
-                    let _ = done_rx.await;
-                    consumer.commit(offset).await?;
-                } else {
-                    break;
+                match res? {
+                    Some((offset, message)) => {
+                        let (done_tx, done_rx) = oneshot::channel();
+                        msg_tx.send((message, done_tx)).await?;
+                        let _ = done_rx.await;
+                        consumer.commit(offset).await?;
+                    }
+                    _ => {
+                        break;
+                    }
                 }
             }
 

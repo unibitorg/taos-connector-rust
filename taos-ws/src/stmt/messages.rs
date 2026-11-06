@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serde_with::{serde_as, NoneAsEmptyString};
+use serde_with::{NoneAsEmptyString, serde_as};
 use taos_query::prelude::RawError as Error;
 
 use super::StmtPrepareResult;
@@ -181,19 +181,9 @@ impl StmtRecv {
             };
         }
         match self.data {
-            StmtRecvData::Conn => StmtOk::Conn({
-                if self.code == 0 {
-                    Ok(())
-                } else {
-                    _e!()
-                }
-            }),
+            StmtRecvData::Conn => StmtOk::Conn(if self.code == 0 { Ok(()) } else { _e!() }),
             StmtRecvData::Init { stmt_id } => StmtOk::Init(self.req_id, {
-                if self.code == 0 {
-                    Ok(stmt_id)
-                } else {
-                    _e!()
-                }
+                if self.code == 0 { Ok(stmt_id) } else { _e!() }
             }),
             StmtRecvData::Prepare { stmt_id, is_insert } => StmtOk::StmtPrepare(stmt_id, {
                 if self.code == 0 {
@@ -205,13 +195,9 @@ impl StmtRecv {
             StmtRecvData::SetTableName { stmt_id }
             | StmtRecvData::SetTags { stmt_id }
             | StmtRecvData::Bind { stmt_id }
-            | StmtRecvData::AddBatch { stmt_id } => StmtOk::Stmt(stmt_id, {
-                if self.code == 0 {
-                    Ok(None)
-                } else {
-                    _e!()
-                }
-            }),
+            | StmtRecvData::AddBatch { stmt_id } => {
+                StmtOk::Stmt(stmt_id, if self.code == 0 { Ok(None) } else { _e!() })
+            }
             StmtRecvData::Exec { stmt_id, affected } => StmtOk::Stmt(stmt_id, {
                 if self.code == 0 {
                     Ok(Some(affected))
@@ -220,13 +206,9 @@ impl StmtRecv {
                 }
             }),
             StmtRecvData::GetTagFields { stmt_id, fields }
-            | StmtRecvData::GetColFields { stmt_id, fields } => StmtOk::StmtFields(stmt_id, {
-                if self.code == 0 {
-                    Ok(fields)
-                } else {
-                    _e!()
-                }
-            }),
+            | StmtRecvData::GetColFields { stmt_id, fields } => {
+                StmtOk::StmtFields(stmt_id, if self.code == 0 { Ok(fields) } else { _e!() })
+            }
             StmtRecvData::UseResult {
                 stmt_id,
                 result_id,

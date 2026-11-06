@@ -58,41 +58,49 @@ impl GeometryView {
 
     /// Unsafe version for [is_null](#method.is_null)
     pub(crate) unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        self.offsets.get_unchecked(row) < 0
+        unsafe { self.offsets.get_unchecked(row) < 0 }
     }
 
     pub(crate) unsafe fn get_unchecked(&self, row: usize) -> Option<&InlineBytes> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            Some(InlineBytes::<u16>::from_ptr(
-                self.data.as_ptr().offset(offset as isize),
-            ))
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                Some(InlineBytes::<u16>::from_ptr(
+                    self.data.as_ptr().offset(offset as isize),
+                ))
+            } else {
+                None
+            }
         }
     }
 
     pub(crate) unsafe fn get_value_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        self.get_unchecked(row)
-            .map_or(BorrowedValue::Null(Ty::Geometry), |s| {
-                BorrowedValue::Geometry(Cow::Borrowed(s.as_bytes()))
-            })
+        unsafe {
+            self.get_unchecked(row)
+                .map_or(BorrowedValue::Null(Ty::Geometry), |s| {
+                    BorrowedValue::Geometry(Cow::Borrowed(s.as_bytes()))
+                })
+        }
     }
 
     pub(crate) unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        match self.get_unchecked(row) {
-            Some(s) => (Ty::Geometry, s.len() as _, s.as_ptr() as _),
-            None => (Ty::Geometry, 0, std::ptr::null()),
+        unsafe {
+            match self.get_unchecked(row) {
+                Some(s) => (Ty::Geometry, s.len() as _, s.as_ptr() as _),
+                None => (Ty::Geometry, 0, std::ptr::null()),
+            }
         }
     }
 
     #[inline]
     pub unsafe fn get_length_unchecked(&self, row: usize) -> Option<usize> {
-        let offset = self.offsets.get_unchecked(row);
-        if offset >= 0 {
-            Some(InlineBytes::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
-        } else {
-            None
+        unsafe {
+            let offset = self.offsets.get_unchecked(row);
+            if offset >= 0 {
+                Some(InlineBytes::<u16>::from_ptr(self.data.as_ptr().offset(offset as isize)).len())
+            } else {
+                None
+            }
         }
     }
 

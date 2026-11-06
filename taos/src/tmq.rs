@@ -1669,10 +1669,11 @@ mod async_tests {
                             tracing::info!("table_name: {:?}", data.table_name());
                             assert_eq!(data.table_name(), Some("tb0"));
                             tracing::info!("data: {}", data.pretty_format());
-                            assert!(data
-                                .pretty_format()
-                                .to_string()
-                                .contains("table name \"tb0\""));
+                            assert!(
+                                data.pretty_format()
+                                    .to_string()
+                                    .contains("table name \"tb0\"")
+                            );
                         }
                     }
                     MessageSet::MetaData(meta, data) => {

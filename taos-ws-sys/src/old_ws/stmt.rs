@@ -5,8 +5,8 @@ use std::os::raw::*;
 use taos_query::common::Value;
 use taos_query::prelude::Itertools;
 use taos_query::stmt::Bindable;
-use taos_ws::stmt::{StmtField as WsStmtField, WsFieldsable};
 use taos_ws::Stmt;
+use taos_ws::stmt::{StmtField as WsStmtField, WsFieldsable};
 
 use super::*;
 
@@ -43,160 +43,172 @@ impl From<WsStmtField> for StmtField {
 pub type WS_STMT = c_void;
 
 unsafe fn stmt_init(taos: *const WS_TAOS, req_id: u64) -> WsResult<Stmt> {
-    let client = (taos as *mut Taos)
-        .as_mut()
-        .ok_or(WsError::new(Code::FAILED, "client pointer it null"))?;
-    Ok(taos_ws::Stmt::init_with_req_id(client, req_id)?)
+    unsafe {
+        let client = (taos as *mut Taos)
+            .as_mut()
+            .ok_or(WsError::new(Code::FAILED, "client pointer it null"))?;
+        Ok(taos_ws::Stmt::init_with_req_id(client, req_id)?)
+    }
 }
 
 /// Create new stmt object.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_init(taos: *const WS_TAOS) -> *mut WS_STMT {
-    ws_stmt_init_with_reqid(taos, get_req_id(taos))
+    unsafe { ws_stmt_init_with_reqid(taos, get_req_id(taos)) }
 }
 
 /// Create new stmt object with req_id.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_init_with_reqid(
     taos: *const WS_TAOS,
     req_id: u64,
 ) -> *mut WS_STMT {
-    let stmt: WsMaybeError<Stmt> = stmt_init(taos, req_id).into();
-    Box::into_raw(Box::new(stmt)) as _
+    unsafe {
+        let stmt: WsMaybeError<Stmt> = stmt_init(taos, req_id).into();
+        Box::into_raw(Box::new(stmt)) as _
+    }
 }
 
 /// Prepare with sql command
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_prepare(
     stmt: *mut WS_STMT,
     sql: *const c_char,
     len: c_ulong,
 ) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => {
-            let sql = if len > 0 {
-                std::str::from_utf8_unchecked(std::slice::from_raw_parts(sql as _, len as _))
-            } else {
-                CStr::from_ptr(sql).to_str().expect(
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => {
+                let sql = if len > 0 {
+                    std::str::from_utf8_unchecked(std::slice::from_raw_parts(sql as _, len as _))
+                } else {
+                    CStr::from_ptr(sql).to_str().expect(
                     "ws_stmt_prepare with a sql len 0 means the input should always be valid utf-8",
                 )
-            };
+                };
 
-            if let Some(no) = stmt.errno() {
-                return get_err_code_fromated(no);
-            }
+                if let Some(no) = stmt.errno() {
+                    return get_err_code_fromated(no);
+                }
 
-            if let Err(e) = stmt
-                .safe_deref_mut()
-                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-                .and_then(|stmt| stmt.prepare(sql))
-            {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            } else {
-                stmt.error = None;
-                clear_error_info();
-                Code::SUCCESS.into()
+                if let Err(e) = stmt
+                    .safe_deref_mut()
+                    .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                    .and_then(|stmt| stmt.prepare(sql))
+                {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                } else {
+                    stmt.error = None;
+                    clear_error_info();
+                    Code::SUCCESS.into()
+                }
             }
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
         }
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
     }
 }
 
 /// Set table name.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_tbname(stmt: *mut WS_STMT, name: *const c_char) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => {
-            let name = CStr::from_ptr(name).to_str().unwrap();
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => {
+                let name = CStr::from_ptr(name).to_str().unwrap();
 
-            if let Err(e) = stmt
-                .safe_deref_mut()
-                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-                .and_then(|stmt| stmt.set_tbname(name))
-            {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            } else {
-                stmt.error = None;
-                clear_error_info();
-                0
+                if let Err(e) = stmt
+                    .safe_deref_mut()
+                    .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                    .and_then(|stmt| stmt.set_tbname(name))
+                {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                } else {
+                    stmt.error = None;
+                    clear_error_info();
+                    0
+                }
             }
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
         }
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
     }
 }
 
 /// Set sub table name.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_sub_tbname(stmt: *mut WS_STMT, name: *const c_char) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => {
-            let name = CStr::from_ptr(name).to_str().unwrap();
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => {
+                let name = CStr::from_ptr(name).to_str().unwrap();
 
-            if let Err(e) = stmt
-                .safe_deref_mut()
-                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-                .and_then(|stmt| stmt.set_tbname(name))
-            {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            } else {
-                stmt.error = None;
-                clear_error_info();
-                0
+                if let Err(e) = stmt
+                    .safe_deref_mut()
+                    .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                    .and_then(|stmt| stmt.set_tbname(name))
+                {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                } else {
+                    stmt.error = None;
+                    clear_error_info();
+                    0
+                }
             }
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
         }
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
     }
 }
 
 /// Set table name and tags.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_tbname_tags(
     stmt: *mut WS_STMT,
     name: *const c_char,
     bind: *const WS_MULTI_BIND,
     len: u32,
 ) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => {
-            let name = CStr::from_ptr(name).to_str().unwrap();
-            let tags = std::slice::from_raw_parts(bind, len as usize)
-                .iter()
-                .map(TaosMultiBind::to_tag_value)
-                .collect_vec();
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => {
+                let name = CStr::from_ptr(name).to_str().unwrap();
+                let tags = std::slice::from_raw_parts(bind, len as usize)
+                    .iter()
+                    .map(TaosMultiBind::to_tag_value)
+                    .collect_vec();
 
-            if let Err(e) = stmt
-                .safe_deref_mut()
-                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-                .and_then(|stmt| stmt.set_tbname_tags(name, &tags))
-            {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            } else {
-                stmt.error = None;
-                clear_error_info();
-                0
+                if let Err(e) = stmt
+                    .safe_deref_mut()
+                    .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                    .and_then(|stmt| stmt.set_tbname_tags(name, &tags))
+                {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                } else {
+                    stmt.error = None;
+                    clear_error_info();
+                    0
+                }
             }
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
         }
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
     }
 }
 
@@ -204,45 +216,48 @@ pub unsafe extern "C" fn ws_stmt_set_tbname_tags(
 ///
 /// Please always use `ws_stmt_reclaim_fields` to free memory.
 #[allow(non_snake_case)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_get_tag_fields(
     stmt: *mut WS_STMT,
     fieldNum: *mut c_int,
     fields: *mut *mut StmtField,
 ) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => match stmt
-            .safe_deref_mut()
-            .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-            .and_then(WsFieldsable::get_tag_fields)
-        {
-            Ok(fields_vec) => {
-                let fields_vec: Vec<StmtField> = fields_vec.into_iter().map(|f| f.into()).collect();
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => match stmt
+                .safe_deref_mut()
+                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                .and_then(WsFieldsable::get_tag_fields)
+            {
+                Ok(fields_vec) => {
+                    let fields_vec: Vec<StmtField> =
+                        fields_vec.into_iter().map(|f| f.into()).collect();
 
-                *fieldNum = fields_vec.len() as _;
+                    *fieldNum = fields_vec.len() as _;
 
-                if fields_vec.is_empty() {
-                    *fields = std::ptr::null_mut();
-                } else {
-                    *fields = Box::into_raw(fields_vec.into_boxed_slice()) as _;
+                    if fields_vec.is_empty() {
+                        *fields = std::ptr::null_mut();
+                    } else {
+                        *fields = Box::into_raw(fields_vec.into_boxed_slice()) as _;
+                    }
+
+                    clear_error_info();
+                    stmt.error = None;
+                    0
                 }
 
-                clear_error_info();
-                stmt.error = None;
-                0
-            }
+                Err(e) => {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                }
+            },
 
-            Err(e) => {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            }
-        },
-
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
+        }
     }
 }
 
@@ -250,60 +265,67 @@ pub unsafe extern "C" fn ws_stmt_get_tag_fields(
 ///
 /// Please always use `ws_stmt_reclaim_fields` to free memory.
 #[allow(non_snake_case)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_get_col_fields(
     stmt: *mut WS_STMT,
     fieldNum: *mut c_int,
     fields: *mut *mut StmtField,
 ) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => match stmt
-            .safe_deref_mut()
-            .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-            .and_then(WsFieldsable::get_col_fields)
-        {
-            Ok(fields_vec) => {
-                let fields_vec: Vec<StmtField> = fields_vec.into_iter().map(|f| f.into()).collect();
-                *fieldNum = fields_vec.len() as _;
-                *fields = Box::into_raw(fields_vec.into_boxed_slice()) as _;
-                stmt.error = None;
-                clear_error_info();
-                0
-            }
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => match stmt
+                .safe_deref_mut()
+                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                .and_then(WsFieldsable::get_col_fields)
+            {
+                Ok(fields_vec) => {
+                    let fields_vec: Vec<StmtField> =
+                        fields_vec.into_iter().map(|f| f.into()).collect();
+                    *fieldNum = fields_vec.len() as _;
+                    *fields = Box::into_raw(fields_vec.into_boxed_slice()) as _;
+                    stmt.error = None;
+                    clear_error_info();
+                    0
+                }
 
-            Err(e) => {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            }
-        },
+                Err(e) => {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                }
+            },
 
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
+        }
     }
 }
 
 /// Free memory of fields that was allocated by `ws_stmt_get_tag_fields` or `ws_stmt_get_col_fields`.
 #[allow(non_snake_case)]
 #[allow(unused_variables)]
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_reclaim_fields(
     stmt: *mut WS_STMT,
     fields: *mut *mut StmtField,
     fieldNum: c_int,
 ) -> c_int {
-    let _ = Vec::from_raw_parts(*fields, fieldNum as usize, fieldNum as usize);
-    0
+    unsafe {
+        let _ = Vec::from_raw_parts(*fields, fieldNum as usize, fieldNum as usize);
+        0
+    }
 }
 
 /// Currently only insert sql is supported.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_is_insert(stmt: *mut WS_STMT, insert: *mut c_int) -> c_int {
-    let _ = stmt;
-    *insert = 1;
-    0
+    unsafe {
+        let _ = stmt;
+        *insert = 1;
+        0
+    }
 }
 
 #[derive(Debug)]
@@ -393,7 +415,7 @@ impl TaosMultiBind {
     }
 
     pub fn to_json(&self) -> serde_json::Value {
-        use serde_json::{json, Value};
+        use serde_json::{Value, json};
         assert!(self.num > 0, "invalid bind value");
         let len = self.num as usize;
 
@@ -418,11 +440,7 @@ impl TaosMultiBind {
                             .zip(nulls)
                             .map(
                                 |(value, is_null)| {
-                                    if *is_null {
-                                        None
-                                    } else {
-                                        Some(*value)
-                                    }
+                                    if *is_null { None } else { Some(*value) }
                                 },
                             )
                             .collect();
@@ -646,210 +664,228 @@ impl Drop for TaosMultiBind {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_set_tags(
     stmt: *mut WS_STMT,
     bind: *const WS_MULTI_BIND,
     len: u32,
 ) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => {
-            let columns = std::slice::from_raw_parts(bind, len as usize)
-                .iter()
-                .map(TaosMultiBind::to_tag_value)
-                .collect_vec();
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => {
+                let columns = std::slice::from_raw_parts(bind, len as usize)
+                    .iter()
+                    .map(TaosMultiBind::to_tag_value)
+                    .collect_vec();
 
-            if let Err(e) = stmt
-                .safe_deref_mut()
-                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-                .and_then(|s| s.set_tags(&columns))
-            {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            } else {
-                0
+                if let Err(e) = stmt
+                    .safe_deref_mut()
+                    .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                    .and_then(|s| s.set_tags(&columns))
+                {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                } else {
+                    0
+                }
             }
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
         }
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_bind_param_batch(
     stmt: *mut WS_STMT,
     bind: *const WS_MULTI_BIND,
     len: u32,
 ) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => {
-            let columns = std::slice::from_raw_parts(bind, len as usize)
-                .iter()
-                .map(TaosMultiBind::to_json)
-                .collect();
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => {
+                let columns = std::slice::from_raw_parts(bind, len as usize)
+                    .iter()
+                    .map(TaosMultiBind::to_json)
+                    .collect();
 
-            if let Err(e) = stmt
-                .safe_deref_mut()
-                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-                .and_then(|s| taos_query::block_in_place_or_global(s.stmt_bind(columns)))
-            {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            } else {
-                0
+                if let Err(e) = stmt
+                    .safe_deref_mut()
+                    .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                    .and_then(|s| taos_query::block_in_place_or_global(s.stmt_bind(columns)))
+                {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                } else {
+                    0
+                }
             }
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
         }
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_add_batch(stmt: *mut WS_STMT) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => {
-            if let Err(e) = stmt
-                .safe_deref_mut()
-                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-                .and_then(|stmt| stmt.add_batch())
-            {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            } else {
-                0
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => {
+                if let Err(e) = stmt
+                    .safe_deref_mut()
+                    .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                    .and_then(|stmt| stmt.add_batch())
+                {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                } else {
+                    0
+                }
             }
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
         }
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
     }
 }
 
 /// Execute the bind batch, get inserted rows in `affected_row` pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_execute(stmt: *mut WS_STMT, affected_rows: *mut i32) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => match stmt
-            .safe_deref_mut()
-            .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-            .and_then(Bindable::execute)
-        {
-            Ok(rows) => {
-                *affected_rows = rows as _;
-                0
-            }
-            Err(e) => {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            }
-        },
-        _ => set_error_and_get_code(WsError::new(
-            Code::INVALID_PARA,
-            "stmt ptr should not be null",
-        )),
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => match stmt
+                .safe_deref_mut()
+                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                .and_then(Bindable::execute)
+            {
+                Ok(rows) => {
+                    *affected_rows = rows as _;
+                    0
+                }
+                Err(e) => {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                }
+            },
+            _ => set_error_and_get_code(WsError::new(
+                Code::INVALID_PARA,
+                "stmt ptr should not be null",
+            )),
+        }
     }
 }
 
 /// Get inserted rows in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_affected_rows(stmt: *mut WS_STMT) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(stmt) => stmt.affected_rows() as _,
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(stmt) => stmt.affected_rows() as _,
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+        }
     }
 }
 
 /// Get inserted rows in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_affected_rows_once(stmt: *mut WS_STMT) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>)
-        .as_mut()
-        .and_then(|s| s.safe_deref_mut())
-    {
-        Some(stmt) => stmt.affected_rows_once() as _,
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>)
+            .as_mut()
+            .and_then(|s| s.safe_deref_mut())
+        {
+            Some(stmt) => stmt.affected_rows_once() as _,
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+        }
     }
 }
 
 /// Get num_params in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_num_params(stmt: *mut WS_STMT, nums: *mut c_int) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => match stmt
-            .safe_deref_mut()
-            .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-            .and_then(taos_ws::Stmt::s_num_params)
-        {
-            Ok(n) => {
-                *nums = n as _;
-                stmt.error = None;
-                clear_error_info();
-                0
-            }
-            Err(e) => {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            }
-        },
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => match stmt
+                .safe_deref_mut()
+                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                .and_then(taos_ws::Stmt::s_num_params)
+            {
+                Ok(n) => {
+                    *nums = n as _;
+                    stmt.error = None;
+                    clear_error_info();
+                    0
+                }
+                Err(e) => {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                }
+            },
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+        }
     }
 }
 
 /// Get param by index in current statement.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_get_param(
     stmt: *mut WS_STMT,
     idx: c_int,
     r#type: *mut c_int,
     bytes: *mut c_int,
 ) -> c_int {
-    match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
-        Some(stmt) => match stmt
-            .safe_deref_mut()
-            .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
-            .and_then(|stmt| stmt.s_get_param(idx as _))
-        {
-            Ok(param) => {
-                *r#type = param.data_type as _;
-                *bytes = param.length as _;
-                stmt.error = None;
-                clear_error_info();
-                0
-            }
-            Err(e) => {
-                let errno = e.code();
-                stmt.error = Some(WsError::new(errno, &e.to_string()));
-                set_error_and_get_code(WsError::new(errno, &e.to_string()))
-            }
-        },
-        _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+    unsafe {
+        match (stmt as *mut WsMaybeError<Stmt>).as_mut() {
+            Some(stmt) => match stmt
+                .safe_deref_mut()
+                .ok_or_else(|| RawError::from_string("stmt ptr should not be null"))
+                .and_then(|stmt| stmt.s_get_param(idx as _))
+            {
+                Ok(param) => {
+                    *r#type = param.data_type as _;
+                    *bytes = param.length as _;
+                    stmt.error = None;
+                    clear_error_info();
+                    0
+                }
+                Err(e) => {
+                    let errno = e.code();
+                    stmt.error = Some(WsError::new(errno, &e.to_string()));
+                    set_error_and_get_code(WsError::new(errno, &e.to_string()))
+                }
+            },
+            _ => set_error_and_get_code(WsError::new(Code::INVALID_PARA, "stmt ptr is invalid")),
+        }
     }
 }
 
 /// Equivalent to ws_errstr
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_errstr(stmt: *mut WS_STMT) -> *const c_char {
-    ws_errstr(stmt as _)
+    unsafe { ws_errstr(stmt as _) }
 }
 
 /// Same to taos_stmt_close
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn ws_stmt_close(stmt: *mut WS_STMT) -> i32 {
-    let _ = Box::from_raw(stmt as *mut WsMaybeError<Stmt>);
-    0
+    unsafe {
+        let _ = Box::from_raw(stmt as *mut WsMaybeError<Stmt>);
+        0
+    }
 }
 
 #[cfg(test)]

@@ -335,31 +335,31 @@ impl Error {
 /// ```
 #[macro_export]
 macro_rules! format_err {
-    (code = $c:expr, raw = $arg:expr, context = $arg2:expr) => {
+    (code = $c:expr_2021, raw = $arg:expr_2021, context = $arg2:expr_2021) => {
         $crate::Error::new_with_context($c, $arg, $arg2)
     };
-    (code = $c:expr, raw = $arg:expr) => {
+    (code = $c:expr_2021, raw = $arg:expr_2021) => {
         $crate::Error::new($c, $arg)
     };
-    (code = $c:expr, raw = ($($arg:tt)*), context = ($($arg2:tt)*) $(,)?) => {
+    (code = $c:expr_2021, raw = ($($arg:tt)*), context = ($($arg2:tt)*) $(,)?) => {
         $crate::Error::new_with_context($c, __priv_format!($($arg)*), __priv_format!($($arg2)*))
     };
-    (code = $c:expr, context = $($arg2:tt)*) => {
+    (code = $c:expr_2021, context = $($arg2:tt)*) => {
         $crate::Error::from($c).context(format!($($arg2)*))
     };
-    (code = $c:expr, raw = $arg:literal, context = $($arg2:tt)*) => {
+    (code = $c:expr_2021, raw = $arg:literal, context = $($arg2:tt)*) => {
         $crate::Error::new_with_context($c, format!($arg), $crate::__priv_format!($($arg2)*))
     };
-    (code = $c:expr, raw = $arg:ident, context = $($arg2:tt)*) => {
+    (code = $c:expr_2021, raw = $arg:ident, context = $($arg2:tt)*) => {
         $crate::Error::new_with_context($c, $arg, $crate::__priv_format!($($arg2)*))
     };
-    (code = $c:expr) => {
+    (code = $c:expr_2021) => {
         $crate::Error::from_code($c)
     };
-    (code = $c:expr, raw = $($arg:tt)*) => {
+    (code = $c:expr_2021, raw = $($arg:tt)*) => {
         $crate::Error::new($c, format!($($arg)*))
     };
-    (code = $c:expr, $($arg:tt)*) => {
+    (code = $c:expr_2021, $($arg:tt)*) => {
         $crate::Error::new($c, format!($($arg)*))
     };
     (any = $($arg:tt)*) => {
@@ -368,25 +368,25 @@ macro_rules! format_err {
     (raw = $($arg:tt)*) => {
         compile_error!("`raw` error message must be used along with an error code!")
     };
-    ($c:expr, raw = $arg:expr) => {
+    ($c:expr_2021, raw = $arg:expr_2021) => {
         $crate::Error::new($c, $arg)
     };
-    ($c:expr, raw = $arg:expr, context = $arg2:expr) => {
+    ($c:expr_2021, raw = $arg:expr_2021, context = $arg2:expr_2021) => {
         $crate::Error::new_with_context($c, $arg, $arg2)
     };
-    ($c:expr, raw = ($($arg:tt)*), context = ($($arg2:tt)*) $(,)?) => {
+    ($c:expr_2021, raw = ($($arg:tt)*), context = ($($arg2:tt)*) $(,)?) => {
         $crate::Error::new_with_context($c, format!($($arg)*), format!($($arg2)*))
     };
-    ($c:expr, context = $arg:expr) => {
+    ($c:expr_2021, context = $arg:expr_2021) => {
         $crate::Error::from($c).context($arg)
     };
-    ($c:expr, context = $($arg2:tt)*) => {
+    ($c:expr_2021, context = $($arg2:tt)*) => {
         $crate::Error::from($c).context(format!($($arg2)*))
     };
-    ($c:expr, raw = $($arg:tt)*) => {
+    ($c:expr_2021, raw = $($arg:tt)*) => {
         $crate::Error::new($c, format!($($arg)*))
     };
-    ($c:expr) => {
+    ($c:expr_2021) => {
         $crate::Error::from($c)
     };
     ($($arg:tt)*) => {
@@ -399,10 +399,10 @@ macro_rules! __priv_format {
     ($msg:literal $(,)?) => {
         literal.to_string()
     };
-    ($err:expr $(,)?) => {
+    ($err:expr_2021 $(,)?) => {
         $err
     };
-    ($fmt:expr, $($arg:tt)*) => {
+    ($fmt:expr_2021, $($arg:tt)*) => {
         format!($fmt, $($arg)*)
     };
 }

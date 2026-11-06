@@ -12,7 +12,7 @@ use flate2::write::GzEncoder;
 use parking_lot::{RwLock, RwLockReadGuard};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use regex::Regex;
-use snafu::{ensure, OptionExt, ResultExt};
+use snafu::{OptionExt, ResultExt, ensure};
 use sysinfo::Disks;
 use tracing::Level;
 
@@ -612,9 +612,11 @@ mod tests {
             .collect();
 
         assert!(files.iter().any(|f| f == &format!("taoswslog.{now}.gz")));
-        assert!(!files
-            .iter()
-            .any(|f| f == &format!("taoswslog.{two_days_ago}.gz")));
+        assert!(
+            !files
+                .iter()
+                .any(|f| f == &format!("taoswslog.{two_days_ago}.gz"))
+        );
     }
 
     #[test]

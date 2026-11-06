@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use faststr::FastStr;
 use serde::{Deserialize, Serialize};
-use serde_with::{serde_as, NoneAsEmptyString};
+use serde_with::{NoneAsEmptyString, serde_as};
 use taos_query::common::{Precision, Ty};
 use taos_query::prelude::RawError;
 use taos_query::util::generate_req_id;
@@ -505,9 +505,9 @@ impl WsMessage {
 mod tests {
     use taos_query::util::test_utils::{test_password, test_username};
 
-    use crate::query::messages::{WsRecv, WsSend};
-    use crate::query::WsConnReq;
     use crate::TaosBuilder;
+    use crate::query::WsConnReq;
+    use crate::query::messages::{WsRecv, WsSend};
 
     use super::*;
 

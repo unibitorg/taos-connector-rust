@@ -207,9 +207,9 @@ impl<'de> Deserialize<'de> for Precision {
 
 #[cfg(test)]
 mod tests {
-    use serde::de::value::{I32Deserializer, StrDeserializer, UnitDeserializer};
-    use serde::de::IntoDeserializer;
     use serde::Deserialize;
+    use serde::de::IntoDeserializer;
+    use serde::de::value::{I32Deserializer, StrDeserializer, UnitDeserializer};
 
     use super::Precision;
 

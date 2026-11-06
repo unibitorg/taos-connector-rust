@@ -73,9 +73,9 @@ macro_rules! _impl_inline_str {
                 /// # Safety
                 ///
                 /// Do not use it directly.
-                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self {
+                pub unsafe fn from_ptr<'a>(ptr: *const u8) -> &'a Self { unsafe {
                     &*std::mem::transmute::<*const u8, *const InlineStr<$ty>>(ptr)
-                }
+                }}
 
                 #[inline]
                 pub const fn as_ptr(&self) -> *const u8 {
@@ -118,9 +118,9 @@ macro_rules! _impl_inline_str {
                 }
 
                 #[inline(never)]
-                pub(crate) unsafe fn replace_utf8(&mut self, s: &str, pos: usize) {
+                pub(crate) unsafe fn replace_utf8(&mut self, s: &str, pos: usize) { unsafe {
                     std::ptr::copy(s.as_ptr(), self.as_mut_ptr().add(pos), s.len());
-                }
+                }}
             }
         )*
     };

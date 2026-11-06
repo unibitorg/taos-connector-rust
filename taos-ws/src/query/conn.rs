@@ -12,12 +12,12 @@ use tokio::time;
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tracing::Instrument;
 
-use crate::query::asyn::{ConnState, WsQuerySender, WS_ERROR_NO};
+use crate::query::asyn::{ConnState, WS_ERROR_NO, WsQuerySender};
 use crate::query::messages::{MessageId, ReqId, ToMessage, WsMessage, WsRecv, WsRecvData, WsSend};
 use crate::query::{Error, WsConnReq, WsTaos};
 use crate::{
-    handle_disconnect_error, send_request_with_timeout, TaosBuilder, WsConnectCallbackFuture,
-    WsStream, WsStreamReader, WsStreamSender,
+    TaosBuilder, WsConnectCallbackFuture, WsStream, WsStreamReader, WsStreamSender,
+    handle_disconnect_error, send_request_with_timeout,
 };
 
 pub fn send_conn_request(
@@ -67,7 +67,7 @@ pub fn send_conn_request(
                             _ => {
                                 return Err(RawError::from_string(format!(
                                     "unexpected conn response: {data:?}"
-                                )))
+                                )));
                             }
                         }
                     }
@@ -80,7 +80,7 @@ pub fn send_conn_request(
                     _ => {
                         return Err(RawError::from_string(format!(
                             "unexpected message during conn: {message:?}"
-                        )))
+                        )));
                     }
                 }
             }
@@ -427,15 +427,16 @@ fn parse_text_message(text: String, query_sender: WsQuerySender, cache: MessageC
         | WsRecvData::Block { .. }
         | WsRecvData::BlockNew { .. }
         | WsRecvData::BlockV2 { .. } => unreachable!("unexpected data type: {:?}", data),
-        _ => {
-            if let Some((_, sender)) = query_sender.queries.remove(&req_id) {
+        _ => match query_sender.queries.remove(&req_id) {
+            Some((_, sender)) => {
                 if let Err(err) = sender.send(ok.map(|_| data)) {
                     tracing::warn!("failed to send data, req_id: 0x{req_id:x}, err: {err:?}");
                 }
-            } else {
+            }
+            _ => {
                 tracing::warn!("no sender found for req_id: 0x{req_id:x}, the message may be lost");
             }
-        }
+        },
     }
 }
 
@@ -515,12 +516,15 @@ fn parse_binary_message(data: Vec<u8>, query_sender: WsQuerySender, cache: Messa
             }
         };
 
-        if let Some((_, sender)) = query_sender.queries.remove(&req_id) {
-            if let Err(err) = sender.send(Ok(data)) {
-                tracing::warn!("failed to send data, req_id: 0x{req_id:x}, err: {err:?}");
+        match query_sender.queries.remove(&req_id) {
+            Some((_, sender)) => {
+                if let Err(err) = sender.send(Ok(data)) {
+                    tracing::warn!("failed to send data, req_id: 0x{req_id:x}, err: {err:?}");
+                }
             }
-        } else {
-            tracing::warn!("no sender found for req_id: 0x{req_id:x}, the message may be lost");
+            _ => {
+                tracing::warn!("no sender found for req_id: 0x{req_id:x}, the message may be lost");
+            }
         }
     });
 }
@@ -613,19 +617,19 @@ fn cleanup_stmt2(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::time::Duration;
 
     use futures::{SinkExt, StreamExt};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use taos_query::{AsyncQueryable, AsyncTBuilder};
     use tokio::task::JoinHandle;
-    use warp::ws::Message;
     use warp::Filter;
+    use warp::ws::Message;
 
-    use crate::query::ConnOption;
     use crate::TaosBuilder;
+    use crate::query::ConnOption;
 
     #[tokio::test]
     async fn test_ws_auto_reconnect() -> anyhow::Result<()> {

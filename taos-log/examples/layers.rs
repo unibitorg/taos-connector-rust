@@ -1,8 +1,8 @@
 use std::io::BufRead;
 
+use taos_log::QidManager;
 use taos_log::layer::TaosLayer;
 use taos_log::writer::RollingFileAppender;
-use taos_log::QidManager;
 use tracing::level_filters::LevelFilter;
 use tracing_log::LogTracer;
 use tracing_subscriber::layer::{Layer, SubscriberExt};

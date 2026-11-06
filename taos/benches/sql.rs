@@ -123,7 +123,7 @@ async fn produce_sqls(senders: Vec<Sender<String>>, subtable_cnt: usize, record_
 
                     for l in 0..record_cnt {
                         let ts = ts + l as i64;
-                        let c1: i32 = rng.gen();
+                        let c1: i32 = rng.r#gen();
                         let c2: f32 = rng.gen_range(0.0..10000000.);
                         let c2: f32 = (c2 * 100.0).round() / 100.0;
                         let c3: f32 = rng.gen_range(0.0..10000000.);

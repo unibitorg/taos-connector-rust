@@ -113,7 +113,7 @@ async fn produce_sqls(subtable_cnt: usize, record_cnt: usize) -> Vec<String> {
                     sql.push_str("insert into ");
                     for k in 0..batch_cnt {
                         let tbname = format!("d{}", j + k);
-                        let c1 = rng.gen::<i32>();
+                        let c1 = rng.r#gen::<i32>();
                         let c2: f32 = rng.gen_range(0.0..10000000.);
                         let c2 = (c2 * 100.0).round() / 100.0;
                         let c3: f32 = rng.gen_range(0.0..10000000.);

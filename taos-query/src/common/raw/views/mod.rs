@@ -8,8 +8,8 @@ use std::io::Write;
 use std::iter::FusedIterator;
 use std::str::FromStr;
 
-use crate::common::{BorrowedValue, Ty, Value};
 use crate::Precision;
+use crate::common::{BorrowedValue, Ty, Value};
 
 mod bool_view;
 pub use bool_view::BoolView;
@@ -563,27 +563,29 @@ impl ColumnView {
     /// Check if a value at `row` is null
     #[inline]
     pub(super) unsafe fn is_null_unchecked(&self, row: usize) -> bool {
-        match self {
-            ColumnView::Bool(view) => view.is_null_unchecked(row),
-            ColumnView::TinyInt(view) => view.is_null_unchecked(row),
-            ColumnView::SmallInt(view) => view.is_null_unchecked(row),
-            ColumnView::Int(view) => view.is_null_unchecked(row),
-            ColumnView::BigInt(view) => view.is_null_unchecked(row),
-            ColumnView::Float(view) => view.is_null_unchecked(row),
-            ColumnView::Double(view) => view.is_null_unchecked(row),
-            ColumnView::VarChar(view) => view.is_null_unchecked(row),
-            ColumnView::Timestamp(view) => view.is_null_unchecked(row),
-            ColumnView::NChar(view) => view.is_null_unchecked(row),
-            ColumnView::UTinyInt(view) => view.is_null_unchecked(row),
-            ColumnView::USmallInt(view) => view.is_null_unchecked(row),
-            ColumnView::UInt(view) => view.is_null_unchecked(row),
-            ColumnView::UBigInt(view) => view.is_null_unchecked(row),
-            ColumnView::Json(view) => view.is_null_unchecked(row),
-            ColumnView::VarBinary(view) => view.is_null_unchecked(row),
-            ColumnView::Geometry(view) => view.is_null_unchecked(row),
-            ColumnView::Decimal(view) => view.is_null_unchecked(row),
-            ColumnView::Decimal64(view) => view.is_null_unchecked(row),
-            ColumnView::Blob(view) => view.is_null_unchecked(row),
+        unsafe {
+            match self {
+                ColumnView::Bool(view) => view.is_null_unchecked(row),
+                ColumnView::TinyInt(view) => view.is_null_unchecked(row),
+                ColumnView::SmallInt(view) => view.is_null_unchecked(row),
+                ColumnView::Int(view) => view.is_null_unchecked(row),
+                ColumnView::BigInt(view) => view.is_null_unchecked(row),
+                ColumnView::Float(view) => view.is_null_unchecked(row),
+                ColumnView::Double(view) => view.is_null_unchecked(row),
+                ColumnView::VarChar(view) => view.is_null_unchecked(row),
+                ColumnView::Timestamp(view) => view.is_null_unchecked(row),
+                ColumnView::NChar(view) => view.is_null_unchecked(row),
+                ColumnView::UTinyInt(view) => view.is_null_unchecked(row),
+                ColumnView::USmallInt(view) => view.is_null_unchecked(row),
+                ColumnView::UInt(view) => view.is_null_unchecked(row),
+                ColumnView::UBigInt(view) => view.is_null_unchecked(row),
+                ColumnView::Json(view) => view.is_null_unchecked(row),
+                ColumnView::VarBinary(view) => view.is_null_unchecked(row),
+                ColumnView::Geometry(view) => view.is_null_unchecked(row),
+                ColumnView::Decimal(view) => view.is_null_unchecked(row),
+                ColumnView::Decimal64(view) => view.is_null_unchecked(row),
+                ColumnView::Blob(view) => view.is_null_unchecked(row),
+            }
         }
     }
 
@@ -598,54 +600,58 @@ impl ColumnView {
     /// Get one value at `row` index of the column view.
     #[inline]
     pub(super) unsafe fn get_ref_unchecked(&self, row: usize) -> BorrowedValue<'_> {
-        match self {
-            ColumnView::Bool(view) => view.get_value_unchecked(row),
-            ColumnView::TinyInt(view) => view.get_value_unchecked(row),
-            ColumnView::SmallInt(view) => view.get_value_unchecked(row),
-            ColumnView::Int(view) => view.get_value_unchecked(row),
-            ColumnView::BigInt(view) => view.get_value_unchecked(row),
-            ColumnView::Float(view) => view.get_value_unchecked(row),
-            ColumnView::Double(view) => view.get_value_unchecked(row),
-            ColumnView::VarChar(view) => view.get_value_unchecked(row),
-            ColumnView::Timestamp(view) => view.get_value_unchecked(row),
-            ColumnView::NChar(view) => view.get_value_unchecked(row),
-            ColumnView::UTinyInt(view) => view.get_value_unchecked(row),
-            ColumnView::USmallInt(view) => view.get_value_unchecked(row),
-            ColumnView::UInt(view) => view.get_value_unchecked(row),
-            ColumnView::UBigInt(view) => view.get_value_unchecked(row),
-            ColumnView::Json(view) => view.get_value_unchecked(row),
-            ColumnView::VarBinary(view) => view.get_value_unchecked(row),
-            ColumnView::Geometry(view) => view.get_value_unchecked(row),
-            ColumnView::Decimal(view) => view.get_value_unchecked(row),
-            ColumnView::Decimal64(view) => view.get_value_unchecked(row),
-            ColumnView::Blob(view) => view.get_value_unchecked(row),
+        unsafe {
+            match self {
+                ColumnView::Bool(view) => view.get_value_unchecked(row),
+                ColumnView::TinyInt(view) => view.get_value_unchecked(row),
+                ColumnView::SmallInt(view) => view.get_value_unchecked(row),
+                ColumnView::Int(view) => view.get_value_unchecked(row),
+                ColumnView::BigInt(view) => view.get_value_unchecked(row),
+                ColumnView::Float(view) => view.get_value_unchecked(row),
+                ColumnView::Double(view) => view.get_value_unchecked(row),
+                ColumnView::VarChar(view) => view.get_value_unchecked(row),
+                ColumnView::Timestamp(view) => view.get_value_unchecked(row),
+                ColumnView::NChar(view) => view.get_value_unchecked(row),
+                ColumnView::UTinyInt(view) => view.get_value_unchecked(row),
+                ColumnView::USmallInt(view) => view.get_value_unchecked(row),
+                ColumnView::UInt(view) => view.get_value_unchecked(row),
+                ColumnView::UBigInt(view) => view.get_value_unchecked(row),
+                ColumnView::Json(view) => view.get_value_unchecked(row),
+                ColumnView::VarBinary(view) => view.get_value_unchecked(row),
+                ColumnView::Geometry(view) => view.get_value_unchecked(row),
+                ColumnView::Decimal(view) => view.get_value_unchecked(row),
+                ColumnView::Decimal64(view) => view.get_value_unchecked(row),
+                ColumnView::Blob(view) => view.get_value_unchecked(row),
+            }
         }
     }
 
     /// Get pointer to value.
     #[inline]
     pub(super) unsafe fn get_raw_value_unchecked(&self, row: usize) -> (Ty, u32, *const c_void) {
-        match self {
-            ColumnView::Bool(view) => view.get_raw_value_unchecked(row),
-            ColumnView::TinyInt(view) => view.get_raw_value_unchecked(row),
-            ColumnView::SmallInt(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Int(view) => view.get_raw_value_unchecked(row),
-            ColumnView::BigInt(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Float(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Double(view) => view.get_raw_value_unchecked(row),
-            ColumnView::VarChar(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Timestamp(view) => view.get_raw_value_unchecked(row),
-            ColumnView::NChar(view) => view.get_raw_value_unchecked(row),
-            ColumnView::UTinyInt(view) => view.get_raw_value_unchecked(row),
-            ColumnView::USmallInt(view) => view.get_raw_value_unchecked(row),
-            ColumnView::UInt(view) => view.get_raw_value_unchecked(row),
-            ColumnView::UBigInt(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Json(view) => view.get_raw_value_unchecked(row),
-            ColumnView::VarBinary(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Geometry(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Decimal(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Decimal64(view) => view.get_raw_value_unchecked(row),
-            ColumnView::Blob(view) => view.get_raw_value_unchecked(row),
+        unsafe {
+            match self {
+                ColumnView::Bool(view) => view.get_raw_value_unchecked(row),
+                ColumnView::TinyInt(view) => view.get_raw_value_unchecked(row),
+                ColumnView::SmallInt(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Int(view) => view.get_raw_value_unchecked(row),
+                ColumnView::BigInt(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Float(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Double(view) => view.get_raw_value_unchecked(row),
+                ColumnView::VarChar(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Timestamp(view) => view.get_raw_value_unchecked(row),
+                ColumnView::NChar(view) => view.get_raw_value_unchecked(row),
+                ColumnView::UTinyInt(view) => view.get_raw_value_unchecked(row),
+                ColumnView::USmallInt(view) => view.get_raw_value_unchecked(row),
+                ColumnView::UInt(view) => view.get_raw_value_unchecked(row),
+                ColumnView::UBigInt(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Json(view) => view.get_raw_value_unchecked(row),
+                ColumnView::VarBinary(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Geometry(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Decimal(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Decimal64(view) => view.get_raw_value_unchecked(row),
+                ColumnView::Blob(view) => view.get_raw_value_unchecked(row),
+            }
         }
     }
 
@@ -819,7 +825,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "booleans can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -854,7 +860,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "tinyint can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -891,7 +897,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "smallint can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -926,7 +932,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "int can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -963,7 +969,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "bigint can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1000,7 +1006,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "unsigned tinyint can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1037,7 +1043,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "unsigned smallint can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1074,7 +1080,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "unsigned int can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1111,7 +1117,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "unsigned big int can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1146,7 +1152,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "booleans can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1227,7 +1233,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "double cast error",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1263,7 +1269,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "booleans can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1300,7 +1306,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "can be casted to primitive types only",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1343,7 +1349,7 @@ impl ColumnView {
                             from: l_ty,
                             to: ty,
                             message: "Timestamp cast error",
-                        })
+                        });
                     }
                 };
                 Ok(view)
@@ -1492,7 +1498,7 @@ impl ColumnView {
         } else {
             let prec_scale = schema.as_prec_scale_unchecked();
             macro_rules! to_decimal {
-                ($iter:expr) => {{
+                ($iter:expr_2021) => {{
                     let iter = { $iter };
                     match ty {
                         Ty::Decimal => Ok(ColumnView::Decimal(
@@ -1507,9 +1513,10 @@ impl ColumnView {
             }
             match self {
                 ColumnView::Bool(view) => {
-                    to_decimal!(view
-                        .iter()
-                        .map(|v| v.and_then(|v| BigDecimal::from_i8(v as i8))))
+                    to_decimal!(
+                        view.iter()
+                            .map(|v| v.and_then(|v| BigDecimal::from_i8(v as i8)))
+                    )
                 }
                 ColumnView::TinyInt(view) => {
                     to_decimal!(view.iter().map(|v| v.and_then(BigDecimal::from_i8)))
@@ -1550,14 +1557,16 @@ impl ColumnView {
                     to_decimal!(view.iter().map(|v| v.and_then(BigDecimal::from_u64)))
                 }
                 ColumnView::VarChar(view) => {
-                    to_decimal!(view
-                        .iter()
-                        .map(|v| { v.and_then(|s| { BigDecimal::from_str(s.as_str()).ok() }) }))
+                    to_decimal!(
+                        view.iter()
+                            .map(|v| { v.and_then(|s| { BigDecimal::from_str(s.as_str()).ok() }) })
+                    )
                 }
                 ColumnView::NChar(view) => {
-                    to_decimal!(view
-                        .iter()
-                        .map(|v| { v.and_then(|s| { BigDecimal::from_str(s).ok() }) }))
+                    to_decimal!(
+                        view.iter()
+                            .map(|v| { v.and_then(|s| { BigDecimal::from_str(s).ok() }) })
+                    )
                 }
                 ColumnView::Decimal(view) => {
                     to_decimal!(view.iter().map(|v| v.map(|d| { d.as_bigdecimal() })))
@@ -1859,7 +1868,10 @@ mod tests {
     #[test]
     fn decimal_column_view_test() -> anyhow::Result<()> {
         let view = ColumnView::from_decimal([Some(12345), None, Some(333)], 10, 2);
-        assert_eq!(format!("{view:?}"), "Decimal([Some(Decimal { data: 12345, precision: 10, scale: 2 }), None, Some(Decimal { data: 333, precision: 10, scale: 2 })])");
+        assert_eq!(
+            format!("{view:?}"),
+            "Decimal([Some(Decimal { data: 12345, precision: 10, scale: 2 }), None, Some(Decimal { data: 333, precision: 10, scale: 2 })])"
+        );
         assert_eq!(view.len(), 3);
         assert_eq!(view.max_variable_length(), 16);
         assert!(!unsafe { view.is_null_unchecked(0) });
@@ -1883,7 +1895,10 @@ mod tests {
         );
 
         let view = ColumnView::from_decimal64([Some(12345), None, Some(333)], 10, 0);
-        assert_eq!(format!("{view:?}"), "Decimal64([Some(Decimal { data: 12345, precision: 10, scale: 0 }), None, Some(Decimal { data: 333, precision: 10, scale: 0 })])");
+        assert_eq!(
+            format!("{view:?}"),
+            "Decimal64([Some(Decimal { data: 12345, precision: 10, scale: 0 }), None, Some(Decimal { data: 333, precision: 10, scale: 0 })])"
+        );
         assert_eq!(view.len(), 3);
         assert_eq!(view.max_variable_length(), 8);
         assert!(!unsafe { view.is_null_unchecked(0) });
