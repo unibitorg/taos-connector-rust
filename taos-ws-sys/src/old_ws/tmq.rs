@@ -1082,11 +1082,11 @@ mod tests {
             execute!(b"CREATE STABLE if not exists meters (ts timestamp, current float, voltage int, phase float) TAGS (location varchar(64), group_id int);\0");
             execute!(b"CREATE topic if not exists topic_ws_test as select * from meters;\0");
             execute!(
-                b"INSERT INTO d1001 USING meters TAGS ('California.SanFrancisco', 2) VALUES 
+                b"INSERT INTO d1001 USING meters TAGS ('California.SanFrancisco', 2) VALUES
                         ('2018-10-03 14:38:05', 10.2, 220, 0.23),
                         ('2018-10-03 14:38:15', 12.6, 218, 0.33),
-                        ('2018-10-03 14:38:25', 12.3, 221, 0.31) 
-                    d1002 USING meters TAGS ('California.SanFrancisco', 3) VALUES 
+                        ('2018-10-03 14:38:25', 12.3, 221, 0.31)
+                    d1002 USING meters TAGS ('California.SanFrancisco', 3) VALUES
                         ('2018-10-03 14:38:04', 10.2, 220, 0.23),
                         ('2018-10-03 14:38:14', 10.3, 218, 0.25),
                         ('2018-10-03 14:38:24', 10.1, 220, 0.22)
